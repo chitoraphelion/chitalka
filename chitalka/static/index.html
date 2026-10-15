@@ -74,6 +74,8 @@ header h1 { font-size:15px; margin:0; font-weight:700; white-space:nowrap; }
 .zoom .fit.on { background:rgba(255,255,255,.22); }
 #build { height:30px; border-radius:15px; padding:0 12px; border:0; background:transparent; color:rgba(255,255,255,.7); font-size:12.5px; white-space:nowrap; }
 #build.off { background:var(--terra); color:#fff; }
+#build.busy { color:#fff; }
+#build.err { background:var(--terra); color:#fff; font-weight:700; }
 #build.new { background:#fff; color:var(--terra); font-weight:700; box-shadow:0 0 0 3px rgba(251,238,232,.35); }
 #sidebtn { position:relative; }
 #sidebtn .n { position:absolute; top:-6px; right:-6px; background:var(--terra); color:#fff; font:700 10.5px/16px var(--ui); min-width:16px; padding:0 4px; border-radius:8px; }
@@ -171,6 +173,8 @@ body.invert #peek canvas { filter:invert(.9) hue-rotate(180deg); }
 .card .meta .cat i { width:8px; height:8px; border-radius:50%; background:var(--c); }
 .card .meta .go { margin-left:auto; border:0; background:none; color:var(--teal); font-weight:700; font-size:12px; border-radius:5px; padding:2px 6px; }
 .card .meta .go:hover { background:var(--teal-l); }
+.card .meta .srcbtn { border:0; background:none; font:11.5px var(--mono); color:var(--muted); border-radius:5px; padding:1px 5px; max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card .meta .srcbtn:hover { background:var(--teal-l); color:var(--teal); }
 .badge { font-size:11px; border-radius:4px; padding:0 6px; line-height:17px; }
 .badge.stale { color:var(--sage); background:var(--sage-l); }
 .badge.new { color:#fff; background:var(--terra); border-radius:8px; font-weight:700; }
@@ -307,6 +311,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
     <tr><td><kbd>R</kbd></td><td>загрузить пересобранную статью</td></tr>
     <tr><td>Клик по ссылке, <kbd>Alt</kbd>+<kbd>←</kbd></td><td>перейти (литература, формула, раздел) и вернуться</td></tr>
     <tr><td>Навести на ссылку</td><td>предпросмотр места, куда она ведёт</td></tr>
+    <tr><td><kbd>E</kbd>, «✎ файл:строка» на карточке</td><td>открыть место в исходнике в nvim</td></tr>
     <tr><td><kbd>D</kbd> / <kbd>I</kbd></td><td>тема: авто, светлая, тёмная / тёмные страницы</td></tr>
   </table>
   <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Клавиши работают в любой раскладке. Закрыть — <kbd>Esc</kbd> или клик мимо.</p>
@@ -1071,6 +1076,12 @@ function renderFilters() {
 }
 function persistFilters() { LS.set("filter", filter); LS.set("cats", [...catFilter]); LS.set("onlyChapter", onlyChapter); }
 
+const srcLabel = s => `${s.file.split("/").pop()}:${s.line}${s.lineEnd ? "–" + s.lineEnd : ""}`;
+async function openSource(src) {
+  if (!src || !src.file) { toast("Место в исходниках не найдено"); return; }
+  try { await api("/api/open", { body: { file: src.file, line: src.line } }); toast("Открыто в nvim: " + srcLabel(src)); }
+  catch (e) { toast("Не открылось: " + e.message, { err: true }); }
+}
 function cardHTML(c) {
   const cat = catOf(c), C = CAT[cat];
   if (composer && composer.mode === "edit" && composer.id === c.id) return composerHTML();
@@ -1090,10 +1101,11 @@ function cardHTML(c) {
   const menu = openMenu === c.id ? `<div class="menu" role="menu">
       <button data-a="edit" role="menuitem">Изменить</button>
       ${isDone(c) ? `<button data-a="reopen" role="menuitem">Вернуть в работу</button>` : `<button data-a="done" role="menuitem">Отметить «готово»</button>`}
-      ${c.source ? `<button data-a="copy" role="menuitem">Скопировать место в исходнике</button><div class="src">${esc(c.source.file)}:${esc(c.source.line)}</div>` : ""}
+      ${c.source ? `<button data-a="nvim" role="menuitem">Открыть в nvim · <kbd>E</kbd></button><button data-a="copy" role="menuitem">Скопировать место в исходнике</button><div class="src">${esc(c.source.file)}:${esc(c.source.line)}</div>` : ""}
       <button data-a="del" class="danger" role="menuitem">Удалить</button></div>` : "";
   return `<article class="card cat-${cat} ${c.id === activeId ? "active" : ""}" data-id="${c.id}" tabindex="0">
     <div class="meta"><span class="cat"><i></i>${C.n}</span>· стр. ${esc(lbl(pageOf(c)))}${c._stale ? ` <span class="badge stale" title="Цитата не найдена в текущей сборке — скорее всего, текст уже исправлен">текст изменён</span>` : ""}
+      ${c.source ? `<button class="srcbtn" data-a="nvim" title="Открыть в nvim (E)${c.source.how === "words" ? " · место найдено по словам, может быть неточным" : ""}">✎ ${esc(srcLabel(c.source))}</button>` : ""}
       <button class="go" data-a="go">${c._stale ? "к стр. " + esc(lbl(c.page)) : "Перейти"} →</button></div>
     <div class="q" data-a="go" title="Перейти к месту в статье">${esc(c.quote)}</div>
     ${c.comment ? `<div class="txt">${esc(c.comment)}</div>` : ""}
@@ -1193,6 +1205,7 @@ listEl.addEventListener("click", async e => {
     }
     case "copy": { const s = `${c.source.file}:${c.source.line}`; try { await navigator.clipboard.writeText(s); toast("Скопировано: " + s); } catch (er) { toast(s); } openMenu = null; renderList(); return; }
     case "del": deleteComment(c); return;
+    case "nvim": openMenu = null; openSource(c.source); renderList(); return;
   }
   if (!e.target.closest("button, textarea, a")) activate(c.id, false);
 });
@@ -1330,11 +1343,17 @@ function setOffline(v) {
   if (v) { b.classList.add("off"); b.textContent = "⚠ нет связи с читалкой"; b.title = "Сервер не отвечает. Запустите ./читалка.sh"; }
   else { b.classList.remove("off"); setBuild(!!newMtime, newMtime || pdfMtime); }
 }
+let watchMode = false, buildInfo = null;
 function setBuild(isNew, mtime) {
   const b = $("#build"); const t = new Date((mtime || pdfMtime) * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-  b.classList.toggle("new", isNew);
-  b.textContent = isNew ? `● Статья пересобрана · ${t} · обновить` : `сборка ${t}`;
-  b.title = isNew ? "Загрузить новую сборку (R)" : "Последняя сборка статьи";
+  b.classList.remove("busy", "err"); b.classList.toggle("new", isNew);
+  const st = buildInfo && buildInfo.state;
+  if (st === "building" || st === "starting") { b.classList.add("busy"); b.textContent = "⟳ собирается…"; b.title = "latexmk -pvc пересобирает статью"; return; }
+  if (st === "error") { const e = buildInfo.errors[0]; b.classList.add("err");
+    b.textContent = "✖ ошибка сборки" + (e ? ` · ${e.file.split("/").pop()}:${e.line}` : "");
+    b.title = (buildInfo.errors.map(x => `${x.file}:${x.line}: ${x.msg}`).join("\n") || buildInfo.tail.join("\n")) + "\n\nКлик — открыть в nvim; лог: " + buildInfo.log; return; }
+  b.textContent = isNew ? `● Статья пересобрана · ${t} · обновить` : `${watchMode ? "◉ слежу · " : ""}сборка ${t}`;
+  b.title = isNew ? "Загрузить новую сборку (R)" : watchMode ? "chitalka --watch: новые сборки загружаются сами" : "Последняя сборка статьи";
 }
 let newMtime = 0;
 async function reloadBook() {
@@ -1347,7 +1366,10 @@ async function reloadBook() {
   toast(nowStale.length ? `Статья обновлена. ${nowStale.length} ${plural(nowStale.length, "комментарий больше не находится", "комментария больше не находятся", "комментариев больше не находятся")} в тексте — похоже, уже исправлено` : "Статья обновлена",
     nowStale.length ? { action: "Показать", onAction: () => activate(nowStale[0].id, true), ms: 9000 } : {});
 }
-$("#build").onclick = reloadBook;
+$("#build").onclick = () => {
+  if (buildInfo && buildInfo.state === "error") { const e = buildInfo.errors[0]; if (e) openSource(e); else toast("Ошибка сборки, подробности в " + buildInfo.log, { err: true }); return; }
+  reloadBook();
+};
 function plural(n, a, b, c) { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; }
 
 // ---------------------------------------------------------------- уведомления
@@ -1383,6 +1405,7 @@ document.addEventListener("keydown", e => {
   if (k === "KeyR" && newMtime) return reloadBook();
   if (k === "KeyW") return rezoom(1, true);
   if (k === "KeyD") return cycleTheme();
+  if (k === "KeyE") { const c = comments.find(x => x.id === activeId); if (c) openSource(c.source); else toast("Сначала выберите комментарий (J/K)"); return; }
   if (k === "KeyI") return toggleInvert();
   if (e.key === "Backspace" && navStack.length) { e.preventDefault(); return goBack(); }
   if (e.key === "+" || e.key === "=" || k === "NumpadAdd") return rezoom(1.15);
@@ -1440,7 +1463,24 @@ async function loadComments(first) {
   if (newAnswers.length) toast(`ИИ ответил на ${newAnswers.length} ${plural(newAnswers.length, "комментарий", "комментария", "комментариев")}`, { tag: "answers", action: "Показать", onAction: () => { filter = "answered"; persistFilters(); activate(newAnswers[0].id, true); }, ms: 8000 });
 }
 setInterval(() => loadComments(false), 15000);
-setInterval(async () => { try { const i = await api("/api/pdfinfo"); if (i.mtime && pdfMtime && i.mtime !== pdfMtime) { newMtime = i.mtime; setBuild(true, i.mtime); } } catch (e) {} }, 5000);
+// новая сборка: без --watch — кнопка «обновить», с --watch — загрузка сама,
+// когда latexmk закончил и PDF не меняется два опроса подряд (файл дописан)
+let seenMtime = 0, lastState = null;
+async function pollPdf() {
+  let i; try { i = await api("/api/pdfinfo"); } catch (e) { return; }
+  buildInfo = i.build; const st = buildInfo && buildInfo.state;
+  if (st === "error" && lastState !== "error") toast("Сборка не удалась" + (buildInfo.errors[0] ? `: ${buildInfo.errors[0].file}:${buildInfo.errors[0].line} ${buildInfo.errors[0].msg}` : ""), { err: true, tag: "build" });
+  if (st === "ok" && lastState === "error") document.querySelectorAll('.toast[data-tag="build"]').forEach(x => x.remove());
+  lastState = st;
+  if (i.mtime && pdfMtime && i.mtime !== pdfMtime) {
+    newMtime = i.mtime;
+    const stable = i.mtime === seenMtime; seenMtime = i.mtime;
+    const busy = st === "building" || st === "starting" || pending || !window.getSelection().isCollapsed;
+    if (watchMode && stable && !busy) { setBuild(false); return reloadBook(); }
+  }
+  setBuild(!!newMtime, newMtime || pdfMtime);
+}
+(async () => { try { watchMode = !!(await api("/api/info")).watch; } catch (e) {} setInterval(pollPdf, watchMode ? 1500 : 5000); pollPdf(); })();
 
 (async () => {
   await openPdf(false);

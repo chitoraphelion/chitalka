@@ -2,10 +2,12 @@
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 
+from .editor import open_in_editor
 from .locate import locate
 from .store import CATEGORIES, STATUSES, Store, new_comment, now
 
@@ -22,6 +24,8 @@ class Config:
     store: Store
     font: str
     title: str = ""
+    builder: Any = None       # build.Builder при --watch
+    editor: str | None = None  # шаблон команды редактора
 
     def pdf_path(self):
         cands = [self.pdf] if self.pdf else [self.root / "main.pdf", self.root / "build" / "main.pdf"]
@@ -83,11 +87,12 @@ def make_handler(cfg: Config):
                 return self.send(200, p.read_bytes(), "application/pdf")
             if path == "/api/info":
                 p = cfg.pdf_path()
-                return self.send(200, {"root": str(cfg.root), "title": cfg.title,
+                return self.send(200, {"root": str(cfg.root), "title": cfg.title, "watch": bool(cfg.builder),
                                        "store": str(cfg.store.path), "pdf": str(p) if p else None})
             if path == "/api/pdfinfo":
                 p = cfg.pdf_path()
-                return self.send(200, {"mtime": p.stat().st_mtime if p else 0, "name": p.name if p else None})
+                return self.send(200, {"mtime": p.stat().st_mtime if p else 0, "name": p.name if p else None,
+                                       "build": cfg.builder.info() if cfg.builder else None})
             if path == "/api/comments":
                 return self.send(200, cfg.store.read())
             return self.send(404, {"error": "не найдено"})
@@ -108,6 +113,13 @@ def make_handler(cfg: Config):
                     return self.send(400, {"error": f"поле {key} должно быть числом"})
             if "status" in data and data["status"] not in STATUSES:
                 return self.send(400, {"error": "неверный статус"})
+
+            if path == "/api/open":                  # открыть файл:строку в редакторе
+                try:
+                    how = open_in_editor(cfg.root, str(data.get("file") or ""), int(data.get("line") or 1), cfg.editor)
+                except (ValueError, RuntimeError, OSError) as e:
+                    return self.send(400, {"error": str(e)})
+                return self.send(200, {"ok": True, "how": how})
 
             if path == "/api/comments":
                 item = new_comment(data, locate(cfg.root, cfg.pdf_path(), data))

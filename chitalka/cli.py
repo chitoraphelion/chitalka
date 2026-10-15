@@ -24,6 +24,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import __version__
+from .build import Builder
 from .server import Config, serve
 from .store import DOC_NAME, Store, messages, now, store_path, waiting
 
@@ -84,6 +85,12 @@ def cmd_open(argv):
     p.add_argument("--root", help="корень проекта с main.tex (по умолчанию текущая папка)")
     p.add_argument("--font", help="шрифт интерфейса (по умолчанию font_family из kitty.conf)")
     p.add_argument("--no-browser", action="store_true", help="не открывать браузер")
+    p.add_argument("-w", "--watch", action="store_true",
+                   help="запустить latexmk -pvc -synctex=1 и подхватывать новые сборки автоматически")
+    p.add_argument("--engine", choices=["pdflatex", "xelatex", "lualatex"],
+                   help="движок для --watch (по умолчанию .latexmkrc или подсказка в main.tex)")
+    p.add_argument("--editor", help="команда редактора с {file} {line} {root} "
+                                    "(по умолчанию nvim во вкладке kitty; также $CHITALKA_EDITOR)")
     p.add_argument("-V", "--version", action="version", version=f"chitalka {__version__}")
     args = p.parse_args(argv)
 
@@ -94,7 +101,7 @@ def cmd_open(argv):
     store_file = store_path(root)
     doc = write_doc(store_file)
     cfg = Config(root=root, pdf=pdf, store=Store(store_file), font=font_stack(args.font or kitty_font()),
-                 title=root.name)
+                 title=root.name, editor=args.editor)
 
     server = None
     for port in range(args.port, args.port + 20):
@@ -116,6 +123,13 @@ def cmd_open(argv):
         sys.exit(f"Нет свободного порта в {args.port}–{args.port + 19}")
 
     url = f"http://127.0.0.1:{server.server_port}/"
+    if args.watch:
+        if not (root / "main.tex").exists():
+            sys.exit(f"--watch: нет {root / 'main.tex'}")
+        outdir = "build" if (pdf and pdf.parent == root / "build") or (not pdf and (root / "build").is_dir()
+                                                                     and not (root / "main.pdf").exists()) else None
+        cfg.builder = Builder(root, store_file.parent / "latexmk.log", args.engine, outdir).start()
+        print(f"Сборка: {' '.join(cfg.builder.cmd)}\n  лог: {cfg.builder.log}", flush=True)
     found = cfg.pdf_path()
     print(f"Читалка: {url}\n  PDF: {found or 'ещё не собран (main.pdf или build/main.pdf)'}\n"
           f"  Комментарии: {store_file}\n  Памятка агентам: {doc}\nОстановить: Ctrl+C", flush=True)
@@ -125,6 +139,9 @@ def cmd_open(argv):
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nГотово.")
+    finally:
+        if cfg.builder:
+            cfg.builder.stop()
     return 0
 
 

@@ -52,3 +52,21 @@ def test_agent_commands(tmp_path, capsys):
     doc = (root / "kommentarii" / "HOW_TO_USE_CHITALKA.md").read_text(encoding="utf-8")
     assert "chitalka list" in doc and "kommentarii.json" in doc
     json.loads(store.path.read_text(encoding="utf-8"))
+
+
+def test_engine_flag(tmp_path):
+    from chitalka.build import engine_flag
+    (tmp_path / "main.tex").write_text("% Компиляция: latexmk -xelatex main.tex\n\\documentclass{article}\n")
+    assert engine_flag(tmp_path, None) == ["-xelatex"]
+    assert engine_flag(tmp_path, "pdflatex") == ["-pdf"]
+    (tmp_path / ".latexmkrc").write_text("$pdf_mode = 5;\n")
+    assert engine_flag(tmp_path, None) == []
+
+
+def test_open_rejects_outside(tmp_path):
+    import pytest
+    from chitalka.editor import open_in_editor
+    project(tmp_path)
+    with pytest.raises(ValueError):
+        open_in_editor(tmp_path, "../x.tex", 1, "true")
+    assert open_in_editor(tmp_path, "main.tex", 3, "true {file} {line}") == "editor"

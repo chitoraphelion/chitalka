@@ -20,12 +20,21 @@ uv tool install -e ~/code/python/chitalka     # команда chitalka появ
 cd ~/path/to/paper
 chitalka                    # ./main.pdf, иначе ./build/main.pdf
 chitalka build/paper.pdf    # другой PDF
+chitalka --watch            # + latexmk -pvc, автообновление
 chitalka --no-browser -p 9000
 ```
 
 Комментарии: `./kommentarii/kommentarii.json` (в старых проектах — `./notes/kommentarii.json`),
 рядом — `HOW_TO_USE_CHITALKA.md`, памятка для агентов. Несколько проектов можно открыть
 одновременно: каждый займёт свой порт; повторный запуск в той же папке откроет уже работающую читалку.
+
+`chitalka --watch` сам запускает `latexmk -pvc -synctex=1` (движок — из `.latexmkrc`,
+подсказки `xelatex` в начале `main.tex` или `--engine`), новые сборки загружаются без `R`,
+ошибка сборки видна в шапке, клик по ней открывает nvim на строке ошибки. Лог — `kommentarii/latexmk.log`.
+
+Кнопка `✎ файл:строка` на карточке (или `E`) открывает место в nvim: новой вкладкой в окне kitty,
+где запущена читалка (`allow_remote_control yes`), иначе новым окном kitty.
+Своя команда: `--editor "code -g {file}:{line}"` или `$CHITALKA_EDITOR`.
 
 Для точных строк собирайте с SyncTeX: `latexmk -synctex=1 …` (или `$synctex = 1;` в `.latexmkrc`).
 Тогда у комментария будет `source: main.tex:397-403 (synctex)`, иначе — поиск по словам.
