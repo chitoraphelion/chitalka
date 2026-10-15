@@ -18,7 +18,7 @@
   /*CHITALKA_FONT*/
   --ui:var(--font, system-ui, sans-serif); --serif:var(--font, Georgia, serif); --mono:var(--font, monospace);
   --surface:#fff; --pagebg:#fff; --head:#1F5F6B; --pop-bg:#22262A; --pop-fg:#fff; --sel:rgba(31,95,107,.26);
-  --toc:264px; --side:384px;
+  --toc:264px; --side:384px; --headh:52px;
 }
 /* тёмная тема: data-theme ставит скрипт (авто — по системе) */
 :root[data-theme="dark"] {
@@ -40,9 +40,19 @@ body.invert .hlLayer, body.invert .selLayer { mix-blend-mode:screen; }
 * { box-sizing:border-box; }
 html, body { height:100%; margin:0; }
 body { font:14px/1.45 var(--ui); color:var(--ink); background:var(--desk);
-  display:grid; grid-template-rows:52px 1fr; grid-template-columns:var(--toc) 1fr var(--side);
+  display:grid; grid-template-rows:var(--headh) 1fr; grid-template-columns:var(--toc) 1fr var(--side);
   grid-template-areas:"top top top" "toc view side"; transition:grid-template-columns .18s; overflow:hidden; }
 body.toc-closed { --toc:0px; } body.side-closed { --side:0px; }
+body.head-closed { --headh:0px; } body.head-closed header { display:none; }
+/* при скрытой шапке — маленькая панель в углу, чтобы вернуть шапку и комментарии */
+#mini { position:fixed; top:8px; right:calc(var(--side) + 14px); z-index:46; display:none; gap:4px; padding:3px; border-radius:9px;
+  background:color-mix(in srgb, var(--head) 80%, transparent); opacity:.35; transition:opacity .15s; }
+#mini:hover, #mini:focus-within { opacity:1; }
+body.head-closed #mini { display:flex; }
+#mini button { position:relative; border:0; background:transparent; color:#fff; height:28px; min-width:30px; border-radius:6px; padding:0 7px; font-size:13px; }
+#mini button:hover { background:rgba(255,255,255,.18); }
+#mini .n { position:absolute; top:-5px; right:-5px; background:var(--terra); color:#fff; font:700 10px/15px var(--ui); min-width:15px; padding:0 3px; border-radius:8px; }
+#mini .n:empty { display:none; }
 button { font:inherit; color:inherit; cursor:pointer; }
 :focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
 kbd { font:600 10.5px var(--mono); border:1px solid currentColor; border-radius:4px; padding:0 4px; opacity:.8; }
@@ -250,7 +260,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 /* ---------- узкие окна */
 @media (max-width:1199px) {
   body { --toc:0px; }
-  body.toc-open #toc { display:block; position:fixed; top:52px; left:0; bottom:0; width:264px; z-index:45; box-shadow:var(--sh-pop); }
+  body.toc-open #toc { display:block; position:fixed; top:var(--headh); left:0; bottom:0; width:264px; z-index:45; box-shadow:var(--sh-pop); }
   #toc { display:none; }
   .search input { width:150px; }
   #crumb { display:none; }
@@ -258,7 +268,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 @media (max-width:899px) {
   body { --side:0px; }
   #side { display:none; }
-  body.side-open #side { display:flex; position:fixed; top:52px; right:0; bottom:0; width:min(384px, calc(100vw - 48px)); z-index:45; box-shadow:var(--sh-pop); }
+  body.side-open #side { display:flex; position:fixed; top:var(--headh); right:0; bottom:0; width:min(384px, calc(100vw - 48px)); z-index:45; box-shadow:var(--sh-pop); }
   .pagejump span.of, #build { display:none; }
 }
 </style>
@@ -274,6 +284,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
   <div class="zoom"><button id="zout" title="Мельче (−)" aria-label="Мельче">−</button><span id="zval">100%</span><button id="zin" title="Крупнее (+)" aria-label="Крупнее">+</button><button id="zfit" class="fit" title="По ширине (W)">↔ По ширине</button></div>
   <button id="build" title="Перезагрузить статью (R)"></button>
   <button class="hbtn" id="sidebtn" title="Комментарии ( ] )" aria-label="Комментарии">💬<span class="n" id="sidecount"></span></button>
+  <button class="hbtn" id="headbtn" title="Скрыть шапку (H), режим чтения (F)" aria-label="Скрыть шапку">▴</button>
   <button class="hbtn" id="themebtn" title="Тема (D), тёмные страницы (I)" aria-label="Тема">◐</button>
   <button class="hbtn" id="helpbtn" title="Горячие клавиши (?)" aria-label="Горячие клавиши">?</button>
 </header>
@@ -293,6 +304,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
   <div id="list"></div>
 </aside>
 <div id="selbar" role="toolbar" aria-label="Комментировать выделенное"></div>
+<div id="mini" role="toolbar" aria-label="Панели"><button data-m="head" title="Показать шапку (H)">▾ шапка</button><button data-m="theme" title="Тема (D)">◐</button><button data-m="side" title="Комментарии ( ] )">💬<span class="n" id="minicount"></span></button></div>
 <div id="tip"></div>
 <div id="peek"><canvas></canvas><span class="pp"></span></div>
 <div id="toasts" role="status" aria-live="polite"></div>
@@ -307,12 +319,13 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
     <tr><td><kbd>/</kbd></td><td>поиск по статье (Enter — следующее совпадение)</td></tr>
     <tr><td><kbd>G</kbd></td><td>перейти на страницу</td></tr>
     <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>W</kbd></td><td>масштаб, по ширине</td></tr>
-    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>скрыть или показать оглавление и комментарии</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd> <kbd>H</kbd></td><td>скрыть или показать оглавление, комментарии, шапку</td></tr>
+    <tr><td><kbd>F</kbd></td><td>режим чтения: скрыть всё и вернуть как было</td></tr>
     <tr><td><kbd>R</kbd></td><td>загрузить пересобранную статью</td></tr>
     <tr><td>Клик по ссылке, <kbd>Alt</kbd>+<kbd>←</kbd></td><td>перейти (литература, формула, раздел) и вернуться</td></tr>
     <tr><td>Навести на ссылку</td><td>предпросмотр места, куда она ведёт</td></tr>
     <tr><td><kbd>E</kbd>, «✎ файл:строка» на карточке</td><td>открыть место в исходнике в nvim</td></tr>
-    <tr><td><kbd>D</kbd> / <kbd>I</kbd></td><td>тема: авто, светлая, тёмная / тёмные страницы</td></tr>
+    <tr><td><kbd>D</kbd> / <kbd>I</kbd></td><td>тема: тёплая светлая ↔ тёмная / тёмные страницы</td></tr>
   </table>
   <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Клавиши работают в любой раскладке. Закрыть — <kbd>Esc</kbd> или клик мимо.</p>
 </div></div>
@@ -1070,7 +1083,7 @@ function renderFilters() {
   document.querySelectorAll("#seg button").forEach(b => { const f = b.dataset.f; b.classList.toggle("on", f === filter); b.setAttribute("aria-selected", f === filter); b.querySelector("b").textContent = k[f] || ""; b.classList.toggle("alert", f === "answered" && k.fresh > 0); });
   $("#catf").innerHTML = CATS.map(c => `<button class="chip cat-${c.k} ${catFilter.has(c.k) ? "on" : ""}" data-cat="${c.k}"><i></i>${c.n === "Проверить факт" ? "Факт" : c.n}</button>`).join("") +
     `<button class="chip dash ${onlyChapter ? "on" : ""}" data-only="1" title="Показывать только комментарии к разделу, который читаете">◎ Этот раздел</button>`;
-  $("#sidecount").textContent = k.fresh ? k.fresh : (k.waiting + k.answered || "");
+  $("#sidecount").textContent = $("#minicount").textContent = k.fresh ? k.fresh : (k.waiting + k.answered || "");
   $("#sidecount").title = k.fresh ? "новых ответов" : "открытых комментариев";
   $("#sumline").textContent = (k.fresh ? `новых ответов: ${k.fresh} · ` : "") + `закрыто ${k.done} из ${k.all}`;
 }
@@ -1318,22 +1331,45 @@ function toggleToc() { if (innerWidth < 1200) document.body.classList.toggle("to
 function toggleSide() { if (innerWidth < 900) document.body.classList.toggle("side-open"); else { document.body.classList.toggle("side-closed"); LS.set("side", !document.body.classList.contains("side-closed")); afterPanel(); } }
 function openSide() { if (innerWidth < 900) document.body.classList.add("side-open"); else if (document.body.classList.contains("side-closed")) { document.body.classList.remove("side-closed"); LS.set("side", true); afterPanel(); } }
 function afterPanel() { if (fit && pdf) setTimeout(() => rezoom(1, true), 200); }
+function toggleHead(show) {
+  const hide = show === undefined ? !document.body.classList.contains("head-closed") : !show;
+  document.body.classList.toggle("head-closed", hide); LS.set("head", !hide); hidePeek(); if (pending) placeSelbar();
+}
+// режим чтения: скрыть оглавление, шапку и комментарии; повторно — вернуть как было
+function toggleFocus() {
+  const b = document.body.classList, wide = innerWidth >= 1200;
+  const shown = { toc: wide ? !b.contains("toc-closed") : b.contains("toc-open"), head: !b.contains("head-closed"), side: innerWidth >= 900 ? !b.contains("side-closed") : b.contains("side-open") };
+  if (shown.toc || shown.head || shown.side) {
+    LS.set("focusPrev", shown); b.add("toc-closed", "side-closed", "head-closed"); b.remove("toc-open", "side-open");
+    toast("Режим чтения — F, чтобы вернуть панели");
+  } else {
+    const prev = LS.get("focusPrev", { toc: true, head: true, side: true });
+    b.toggle("toc-closed", !prev.toc); b.toggle("side-closed", !prev.side); b.toggle("head-closed", !prev.head);
+  }
+  LS.set("toc", !b.contains("toc-closed")); LS.set("side", !b.contains("side-closed")); LS.set("head", !b.contains("head-closed"));
+  afterPanel();
+}
+$("#headbtn").onclick = () => toggleHead(false);
+$("#mini").addEventListener("click", e => { const m = e.target.closest("button")?.dataset.m;
+  if (m === "head") toggleHead(true); else if (m === "side") toggleSide(); else if (m === "theme") cycleTheme(); });
+if (LS.get("head", true) === false) document.body.classList.add("head-closed");
 $("#tocbtn").onclick = toggleToc; $("#sidebtn").onclick = toggleSide;
 if (LS.get("toc", true) === false) document.body.classList.add("toc-closed");
 if (LS.get("side", true) === false) document.body.classList.add("side-closed");
 
 // ---------------------------------------------------------------- тема
-const THEMES = ["auto", "light", "dark"], THEME_NAMES = { auto: "как в системе", light: "светлая", dark: "тёмная" };
-let theme = LS.get("theme", "auto"), invertPages = LS.get("invert", false);
+const THEME_NAMES = { light: "тёплая светлая", dark: "тёмная" };
 const darkMq = matchMedia("(prefers-color-scheme: dark)");
+let theme = LS.get("theme", null), invertPages = LS.get("invert", false);
+if (!THEME_NAMES[theme]) theme = darkMq.matches ? "dark" : "light";   // первый запуск — как в системе
 function applyTheme() {
-  const dark = theme === "dark" || (theme === "auto" && darkMq.matches);
+  const dark = theme === "dark";
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   document.body.classList.toggle("invert", dark && invertPages);
   $("#themebtn").title = `Тема: ${THEME_NAMES[theme]} (D) · страницы: ${dark && invertPages ? "тёмные" : "светлые"} (I)`;
 }
-darkMq.addEventListener("change", applyTheme); applyTheme();
-function cycleTheme() { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; LS.set("theme", theme); applyTheme(); toast("Тема: " + THEME_NAMES[theme]); }
+applyTheme();
+function cycleTheme() { theme = theme === "dark" ? "light" : "dark"; LS.set("theme", theme); applyTheme(); toast("Тема: " + THEME_NAMES[theme]); }
 function toggleInvert() { invertPages = !invertPages; LS.set("invert", invertPages); applyTheme();
   toast(document.documentElement.dataset.theme === "dark" ? (invertPages ? "Тёмные страницы" : "Светлые страницы") : "Тёмные страницы — только в тёмной теме (D)"); }
 $("#themebtn").onclick = cycleTheme;
@@ -1398,8 +1434,10 @@ document.addEventListener("keydown", e => {
   }
   if (e.key === "Escape") { if (composer) closeComposer(false); document.body.classList.remove("toc-open", "side-open"); $("#sres").hidden = true; return; }
   if (e.key === "?" || (k === "Slash" && e.shiftKey)) { $("#help").style.display = "flex"; return; }
-  if (e.key === "/" || k === "Slash") { e.preventDefault(); $("#q").focus(); return; }
-  if (k === "KeyG") { e.preventDefault(); $("#pg").focus(); return; }
+  if (e.key === "/" || k === "Slash") { e.preventDefault(); toggleHead(true); $("#q").focus(); return; }
+  if (k === "KeyG") { e.preventDefault(); toggleHead(true); $("#pg").focus(); return; }
+  if (k === "KeyH") return toggleHead();
+  if (k === "KeyF") return toggleFocus();
   if (k === "BracketLeft") return toggleToc();
   if (k === "BracketRight") return toggleSide();
   if (k === "KeyR" && newMtime) return reloadBook();
