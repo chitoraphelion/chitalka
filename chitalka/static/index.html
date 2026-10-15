@@ -1,0 +1,1454 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Читалка</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --teal:#1F5F6B; --teal-d:#174A54; --teal-l:#E6F0F1;
+  --terra:#B5532C; --terra-l:#FBEEE8;
+  --indigo:#3E3A6E; --indigo-l:#EEEDF6;
+  --amber:#8A6A00; --amber-l:#FFF4D6;
+  --sage:#4F6E3C; --sage-l:#EDF2E7;
+  --paper:#F4EFE6; --desk:#E4DED2; --panel:#FBF9F5; --card:#FFF;
+  --ink:#22262A; --ink-2:#4A4F55; --muted:#6B7075; --line:#DDD6CA; --line-2:#ECE6DB;
+  --sh-page:0 1px 2px rgba(60,45,25,.10), 0 6px 20px rgba(60,45,25,.10);
+  --sh-pop:0 2px 6px rgba(20,25,30,.12), 0 12px 32px rgba(20,25,30,.18);
+  /*CHITALKA_FONT*/
+  --ui:var(--font, system-ui, sans-serif); --serif:var(--font, Georgia, serif); --mono:var(--font, monospace);
+  --surface:#fff; --pagebg:#fff; --head:#1F5F6B; --pop-bg:#22262A; --pop-fg:#fff; --sel:rgba(31,95,107,.26);
+  --toc:264px; --side:384px;
+}
+/* тёмная тема: data-theme ставит скрипт (авто — по системе) */
+:root[data-theme="dark"] {
+  --teal:#5DB3C1; --teal-d:#4A9DAA; --teal-l:#1D3236; --terra:#E8875D; --terra-l:#3A241B;
+  --indigo-l:#26243A; --amber-l:#3A3218; --sage:#97BE7B; --sage-l:#22301C;
+  --paper:#25282C; --desk:#121417; --panel:#1A1D21; --card:#1F2226; --surface:#262A2F; --head:#16353B;
+  --ink:#E2E5E8; --ink-2:#C2C7CC; --muted:#8B9299; --line:#343A40; --line-2:#2A2E33;
+  --pop-bg:#2E343A; --sel:rgba(93,179,193,.30);
+  --sh-page:0 1px 2px rgba(0,0,0,.5), 0 6px 20px rgba(0,0,0,.35); color-scheme:dark;
+}
+body.invert .page canvas { filter:invert(.9) hue-rotate(180deg); }
+body.invert .page { --pagebg:#1B1B1B; }
+body.invert .hlLayer, body.invert .selLayer { mix-blend-mode:screen; }
+.cat-typo   { --c:#B5532C; --t:#B5532C; --f:rgba(181,83,44,.20); }
+.cat-rewrite{ --c:#C99A00; --t:#8A6A00; --f:rgba(240,186,0,.38); }
+.cat-fact   { --c:#3E3A6E; --t:#3E3A6E; --f:rgba(62,58,110,.17); }
+.cat-ask    { --c:#1F5F6B; --t:#1F5F6B; --f:rgba(31,95,107,.18); }
+.cat-idea   { --c:#4F6E3C; --t:#4F6E3C; --f:rgba(79,110,60,.18); }
+* { box-sizing:border-box; }
+html, body { height:100%; margin:0; }
+body { font:14px/1.45 var(--ui); color:var(--ink); background:var(--desk);
+  display:grid; grid-template-rows:52px 1fr; grid-template-columns:var(--toc) 1fr var(--side);
+  grid-template-areas:"top top top" "toc view side"; transition:grid-template-columns .18s; overflow:hidden; }
+body.toc-closed { --toc:0px; } body.side-closed { --side:0px; }
+button { font:inherit; color:inherit; cursor:pointer; }
+:focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
+kbd { font:600 10.5px var(--mono); border:1px solid currentColor; border-radius:4px; padding:0 4px; opacity:.8; }
+
+/* ---------- шапка */
+header { grid-area:top; display:flex; align-items:center; gap:10px; padding:0 12px; background:var(--head); color:#fff; min-width:0; }
+header :focus-visible { outline-color:#fff; }
+.hbtn { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22); color:#fff; border-radius:8px; height:32px; min-width:32px; padding:0 9px; }
+.hbtn:hover { background:rgba(255,255,255,.22); }
+header h1 { font-size:15px; margin:0; font-weight:700; white-space:nowrap; }
+#crumb { font-size:13px; color:rgba(255,255,255,.75); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+#crumb b { color:#fff; font-weight:400; }
+.pagejump { display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap; }
+.pagejump input { width:52px; height:28px; border-radius:6px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.12); color:#fff; text-align:center; font:inherit; }
+.search { position:relative; }
+.search input { width:220px; height:32px; border-radius:8px; border:1px solid rgba(255,255,255,.25); background:rgba(255,255,255,.12); color:#fff; padding:0 30px 0 10px; font:inherit; }
+.search input::placeholder { color:rgba(255,255,255,.6); }
+.search kbd { position:absolute; right:8px; top:8px; color:#fff; }
+#sres { position:absolute; top:38px; right:0; width:420px; max-height:60vh; overflow:auto; background:var(--surface); color:var(--ink); border-radius:10px; box-shadow:var(--sh-pop); z-index:50; }
+#sres .st { padding:8px 12px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line-2); }
+#sres a { display:block; padding:7px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line-2); }
+#sres a:hover, #sres a.cur { background:var(--teal-l); }
+#sres a b { color:var(--teal); font-size:12px; margin-right:6px; }
+#sres mark { background:#FFE58A; }
+.zoom { display:flex; border:1px solid rgba(255,255,255,.25); border-radius:8px; overflow:hidden; }
+.zoom button { background:transparent; border:0; color:#fff; height:30px; padding:0 9px; }
+.zoom button:hover { background:rgba(255,255,255,.18); }
+.zoom span { align-self:center; min-width:46px; text-align:center; font-size:12.5px; }
+.zoom .fit.on { background:rgba(255,255,255,.22); }
+#build { height:30px; border-radius:15px; padding:0 12px; border:0; background:transparent; color:rgba(255,255,255,.7); font-size:12.5px; white-space:nowrap; }
+#build.off { background:var(--terra); color:#fff; }
+#build.new { background:#fff; color:var(--terra); font-weight:700; box-shadow:0 0 0 3px rgba(251,238,232,.35); }
+#sidebtn { position:relative; }
+#sidebtn .n { position:absolute; top:-6px; right:-6px; background:var(--terra); color:#fff; font:700 10.5px/16px var(--ui); min-width:16px; padding:0 4px; border-radius:8px; }
+#sidebtn .n:empty { display:none; }
+
+/* ---------- оглавление */
+#toc { grid-area:toc; overflow:auto; background:var(--panel); border-right:1px solid var(--line); padding:8px 0 40px; }
+#toc .cap { font:700 11px var(--ui); letter-spacing:.06em; color:var(--muted); padding:8px 16px; text-transform:uppercase; }
+#toc a { display:flex; gap:6px; align-items:baseline; padding:5px 12px 5px 16px; color:var(--ink); text-decoration:none; font-size:13.5px; border-left:3px solid transparent; cursor:pointer; }
+#toc a:hover { background:var(--line-2); }
+#toc a.part { font-weight:700; color:var(--teal); margin-top:10px; }
+#toc a.sec { padding-left:30px; font-size:12.5px; color:var(--ink-2); }
+#toc a.cur { background:var(--teal-l); border-left-color:var(--teal); }
+#toc a .t { flex:1; }
+#toc .pill { font:700 11px/18px var(--ui); color:var(--terra); background:var(--terra-l); border-radius:9px; padding:0 7px; }
+
+/* ---------- чтение */
+#view { grid-area:view; overflow:auto; position:relative; outline:none; }
+#pages { display:flex; flex-direction:column; align-items:center; gap:34px; padding:24px 24px 40vh; min-width:min-content; }
+.page { position:relative; background:var(--pagebg); box-shadow:var(--sh-page); }
+.page canvas { display:block; position:absolute; inset:0; }
+.page .pnum { position:absolute; left:0; right:0; bottom:-22px; text-align:center; font:11.5px var(--ui); color:#8A8478; }
+.hlLayer { position:absolute; inset:0; z-index:1; pointer-events:none; mix-blend-mode:multiply; }
+.mark { position:absolute; border-radius:2px; background:var(--f); box-shadow:inset 0 -2px 0 var(--c); }
+.mark.active { background:color-mix(in srgb, var(--c) 32%, transparent); outline:2px solid var(--c); outline-offset:1px; }
+.mark.done { background:none; box-shadow:inset 0 -1.5px 0 rgba(107,112,117,.7); }
+.pending { position:absolute; background:var(--sel); border-radius:3px; }
+.hl-search { position:absolute; background:rgba(31,95,107,.30); border-radius:2px; animation:fade 3s forwards; }
+@keyframes fade { 0%,70% { opacity:1 } 100% { opacity:0 } }
+.pin { position:absolute; width:12px; height:12px; border-radius:50%; background:var(--teal); color:#fff; font:700 6.5px/12px var(--ui); text-align:center; transform:translateY(-50%); box-shadow:0 0 0 1.5px #fff; }
+.textLayer { position:absolute; inset:0; overflow:hidden; line-height:1; z-index:2; text-size-adjust:none; forced-color-adjust:none; }
+.textLayer span, .textLayer br { color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0 0; }
+.textLayer ::selection { background:transparent; }
+.selLayer { position:absolute; inset:0; z-index:1; pointer-events:none; mix-blend-mode:multiply; }
+:root[data-theme="dark"] .selLayer { mix-blend-mode:normal; }
+.sel { position:absolute; background:var(--sel); border-radius:3px; }
+.linkLayer { position:absolute; inset:0; z-index:3; pointer-events:none; }
+.linkLayer a { position:absolute; pointer-events:auto; border-radius:2px; cursor:pointer; }
+.linkLayer a:hover { background:color-mix(in srgb, var(--teal) 13%, transparent); box-shadow:inset 0 -1.5px 0 var(--teal); }
+body.selecting .linkLayer a { pointer-events:none; }
+.hl-dest { position:absolute; left:6%; right:6%; height:3px; background:var(--teal); border-radius:2px; animation:fade 2.2s forwards; }
+#peek { position:fixed; z-index:65; display:none; background:var(--pagebg); border-radius:8px; box-shadow:var(--sh-pop); overflow:hidden; border:1px solid var(--line); pointer-events:none; }
+#peek canvas { display:block; }
+body.invert #peek canvas { filter:invert(.9) hue-rotate(180deg); }
+#peek .pp { position:absolute; right:6px; bottom:4px; font:11px var(--ui); color:var(--muted); background:var(--surface); border-radius:4px; padding:0 5px; }
+.textLayer .endOfContent { display:block; position:absolute; inset:100% 0 0; z-index:-1; cursor:default; user-select:none; }
+.textLayer.selecting .endOfContent { top:0; }
+.page.over-mark .textLayer span { cursor:pointer; }
+#tip { position:fixed; z-index:60; max-width:260px; background:var(--pop-bg); color:var(--pop-fg); font-size:12.5px; border-radius:8px; padding:6px 9px; pointer-events:none; display:none; box-shadow:var(--sh-pop); }
+#tip b { font-weight:700; }
+.state { margin:15vh auto; max-width:440px; text-align:center; color:var(--muted); font-size:14px; }
+
+/* ---------- панель над выделением */
+#selbar { position:fixed; z-index:40; display:none; align-items:center; gap:4px; padding:5px; background:var(--pop-bg); border-radius:10px; box-shadow:var(--sh-pop); opacity:0; transform:translateY(4px); transition:opacity .12s, transform .12s; }
+#selbar.show { opacity:1; transform:none; }
+#selbar::after { content:""; position:absolute; left:var(--ax,50%); bottom:-6px; border:6px solid transparent; border-bottom:0; border-top-color:var(--pop-bg); transform:translateX(-6px); }
+#selbar.below::after { bottom:auto; top:-6px; border-top:0; border-bottom:6px solid var(--pop-bg); }
+#selbar .go { height:30px; background:var(--teal); color:#fff; border:0; border-radius:7px; font-weight:700; font-size:13px; padding:0 10px; display:flex; gap:8px; align-items:center; }
+#selbar .sep { width:1px; height:20px; background:rgba(255,255,255,.2); margin:0 3px; }
+#selbar .dot { height:30px; border:0; background:transparent; border-radius:7px; display:flex; align-items:center; gap:5px; padding:0 7px; color:#fff; font-size:12px; }
+#selbar .dot small { font:600 9.5px var(--mono); opacity:.55; }
+#selbar .dot:hover { background:rgba(255,255,255,.12); }
+#selbar .dot i { width:12px; height:12px; border-radius:50%; background:var(--c); box-shadow:0 0 0 2px #fff; }
+
+/* ---------- правая панель */
+#side { grid-area:side; display:flex; flex-direction:column; background:var(--panel); border-left:1px solid var(--line); min-width:0; overflow:hidden; }
+.filters { padding:10px 12px 8px; border-bottom:1px solid var(--line); background:var(--panel); }
+.seg { display:flex; background:var(--line-2); border-radius:9px; padding:3px; gap:2px; }
+.seg button { flex:1; border:0; background:transparent; height:28px; border-radius:7px; font-size:12.5px; white-space:nowrap; color:var(--ink-2); }
+.seg button b { color:var(--muted); font-weight:700; margin-left:3px; }
+.seg button.on { background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.12); color:var(--ink); }
+.seg button.on b { color:var(--teal); }
+.seg button.alert b { color:var(--terra); }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+.chip { height:26px; border-radius:13px; border:1px solid var(--line); background:var(--surface); padding:0 9px 0 8px; font-size:12.5px; display:inline-flex; align-items:center; gap:6px; }
+.chip i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+.chip.on { border-color:var(--c, var(--teal)); background:color-mix(in srgb, var(--c, var(--teal)) 10%, var(--surface)); font-weight:700; }
+.chip.dash { border-style:dashed; margin-left:auto; }
+.chip.dash.on { --c:var(--teal); }
+.sidetools { display:flex; gap:8px; margin-top:8px; font-size:12px; color:var(--muted); align-items:center; }
+.sidetools button { border:0; background:none; color:var(--teal); font-size:12px; padding:2px 4px; border-radius:5px; }
+.sidetools button:hover { background:var(--teal-l); }
+#list { flex:1; overflow:auto; padding-bottom:40px; }
+.ghead { position:sticky; top:0; z-index:2; background:var(--panel); font:700 11px var(--ui); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:14px 16px 4px; display:flex; }
+.ghead span:first-child { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.empty { color:var(--muted); padding:40px 24px; text-align:center; font-size:13.5px; }
+.empty .ic { font-size:30px; color:var(--line); display:block; margin-bottom:8px; }
+.empty button { border:0; background:none; color:var(--teal); text-decoration:underline; }
+
+.card { position:relative; margin:8px 12px; background:var(--card); border:1px solid var(--line); border-left:4px solid var(--c); border-radius:10px; padding:9px 12px 8px; }
+.card:focus-visible { outline-offset:1px; }
+.card.active { box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 40%, transparent); }
+.card .meta { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.card .meta .cat { color:var(--t); font-weight:700; display:inline-flex; align-items:center; gap:5px; }
+.card .meta .cat i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+.card .meta .go { margin-left:auto; border:0; background:none; color:var(--teal); font-weight:700; font-size:12px; border-radius:5px; padding:2px 6px; }
+.card .meta .go:hover { background:var(--teal-l); }
+.badge { font-size:11px; border-radius:4px; padding:0 6px; line-height:17px; }
+.badge.stale { color:var(--sage); background:var(--sage-l); }
+.badge.new { color:#fff; background:var(--terra); border-radius:8px; font-weight:700; }
+.card .q { margin:6px 0 5px; padding-left:9px; border-left:3px solid var(--c); font:italic 13.5px/1.45 var(--serif); color:var(--ink-2); cursor:pointer; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.card .q.full { -webkit-line-clamp:unset; }
+.card .txt { white-space:pre-wrap; font-size:14px; overflow-wrap:anywhere; }
+.card .sug { overflow-wrap:anywhere; margin-top:5px; font:13.5px/1.45 var(--serif); background:var(--paper); border-radius:6px; padding:5px 8px; }
+.card .sug .lbl { font:700 11px var(--ui); color:var(--muted); display:block; }
+del { color:var(--terra); text-decoration-thickness:1.5px; } ins { text-decoration:none; background:var(--sage-l); color:var(--sage); }
+.msg { display:flex; gap:8px; margin-top:8px; align-items:flex-start; }
+.msg .av { flex:none; width:22px; height:22px; border-radius:50%; background:var(--teal); color:#fff; font:700 9.5px/22px var(--ui); text-align:center; }
+.msg .bub { flex:1; background:var(--teal-l); border-radius:4px 12px 12px 12px; padding:6px 10px; font-size:13.5px; white-space:pre-wrap; min-width:0; overflow-wrap:anywhere; }
+.msg .bub .h { font:700 11.5px var(--ui); color:var(--teal); display:flex; gap:6px; align-items:center; margin-bottom:1px; }
+.msg.me .av { background:var(--line); color:var(--ink-2); }
+.msg.me .bub { background:var(--line-2); border-radius:12px 4px 12px 12px; }
+.msg.me .bub .h { color:var(--ink-2); }
+.acts { display:flex; gap:6px; align-items:center; margin-top:8px; }
+.btn { height:28px; border-radius:7px; border:1px solid var(--line); background:var(--surface); padding:0 10px; font-size:12.5px; }
+.btn:hover { background:var(--line-2); }
+.btn.pri { border-color:var(--teal); color:var(--teal); font-weight:700; }
+.btn.solid { background:var(--teal); color:#fff; border-color:var(--teal); font-weight:700; }
+.btn.solid:hover { background:var(--teal-d); }
+.btn:disabled { opacity:.5; cursor:default; }
+.acts .wait { font-size:12px; color:var(--muted); }
+.acts .more { margin-left:auto; width:28px; padding:0; border-color:transparent; font-size:16px; line-height:1; }
+.menu { position:absolute; right:10px; bottom:38px; z-index:5; background:var(--surface); border-radius:10px; box-shadow:var(--sh-pop); padding:4px; min-width:210px; }
+.menu button { display:block; width:100%; text-align:left; border:0; background:none; padding:7px 10px; border-radius:6px; font-size:13px; }
+.menu button:hover, .menu button:focus-visible { background:var(--line-2); }
+.menu button.danger { color:var(--terra); }
+.menu .src { font:11.5px var(--mono); color:var(--muted); padding:4px 10px 6px; }
+.reply-box { margin-top:8px; }
+.reply-box textarea { width:100%; min-height:60px; }
+.card.done { border:1px solid var(--line); background:transparent; padding:6px 12px; cursor:pointer; display:flex; gap:8px; align-items:center; font-size:13px; color:var(--ink-2); }
+.card.done .ck { color:var(--sage); font-weight:700; }
+.card.done .ln { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card.done .pg { font-size:12px; color:var(--muted); }
+
+/* ---------- редактор */
+.composer { margin:10px 12px; background:var(--surface); border:1px solid var(--teal); box-shadow:0 0 0 3px var(--teal-l); border-radius:14px; padding:10px 12px; }
+.composer .ch { font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:2px 6px; }
+.composer .ch b { color:var(--ink); }
+.composer .ch .dr { margin-left:auto; }
+.composer .q { margin:6px 0 8px; padding-left:9px; border-left:3px solid var(--c); font:italic 13.5px/1.45 var(--serif); color:var(--ink-2); max-height:7.3em; overflow:auto; overflow-wrap:anywhere; }
+.cats { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.cats .chip { cursor:pointer; }
+textarea, .inp { width:100%; font:14px/1.45 var(--ui); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; resize:vertical; background:var(--surface); }
+textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-l); }
+.composer textarea.main { min-height:84px; }
+.sugt { display:block; margin:8px 0 4px; border:0; background:none; color:var(--teal); font-size:13px; padding:2px 0; }
+.composer textarea.sg { font:14px/1.45 var(--serif); background:var(--paper); min-height:60px; }
+.diff { font:13.5px/1.5 var(--serif); padding:4px 2px; }
+.diff .lbl, .sug .lbl { font:700 11px var(--ui); color:var(--muted); display:block; margin-top:4px; }
+.composer .row { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.composer .row .hint { margin-right:auto; font-size:12px; color:var(--muted); }
+.draftbar { margin:10px 12px 0; padding:7px 10px; border:1px dashed var(--teal); border-radius:10px; font-size:13px; display:flex; gap:8px; align-items:center; background:var(--teal-l); }
+.draftbar span { flex:1; }
+.draftbar button { border:0; background:none; color:var(--teal); font-weight:700; font-size:12.5px; }
+
+/* ---------- уведомления и справка */
+#toasts { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:70; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.toast { background:var(--pop-bg); color:var(--pop-fg); border-radius:10px; padding:9px 10px 9px 14px; font-size:13.5px; box-shadow:var(--sh-pop); display:flex; gap:12px; align-items:center; max-width:560px; }
+.toast.err { background:var(--terra); }
+.toast button { border:0; background:none; color:#9FD3DC; font-weight:700; }
+.toast .x { color:rgba(255,255,255,.6); font-weight:400; }
+#help { position:fixed; inset:0; background:rgba(20,25,30,.35); z-index:80; display:none; align-items:center; justify-content:center; }
+#help .box { background:var(--surface); border-radius:14px; padding:18px 22px; width:min(560px,92vw); box-shadow:var(--sh-pop); }
+#help h2 { margin:0 0 10px; font-size:16px; }
+#help table { width:100%; border-collapse:collapse; font-size:13.5px; }
+#help td { padding:4px 0; border-bottom:1px solid var(--line-2); }
+#help td:first-child { width:42%; color:var(--muted); }
+
+/* ---------- узкие окна */
+@media (max-width:1199px) {
+  body { --toc:0px; }
+  body.toc-open #toc { display:block; position:fixed; top:52px; left:0; bottom:0; width:264px; z-index:45; box-shadow:var(--sh-pop); }
+  #toc { display:none; }
+  .search input { width:150px; }
+  #crumb { display:none; }
+}
+@media (max-width:899px) {
+  body { --side:0px; }
+  #side { display:none; }
+  body.side-open #side { display:flex; position:fixed; top:52px; right:0; bottom:0; width:min(384px, calc(100vw - 48px)); z-index:45; box-shadow:var(--sh-pop); }
+  .pagejump span.of, #build { display:none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <button class="hbtn" id="tocbtn" title="Оглавление ( [ )" aria-label="Оглавление">☰</button>
+  <button class="hbtn" id="backbtn" hidden title="Назад после перехода по ссылке (Alt+←)" aria-label="Назад">←</button>
+  <h1 id="title">Читалка</h1>
+  <div id="crumb"></div>
+  <div class="pagejump">стр. <input id="pg" aria-label="Номер страницы" title="Перейти на страницу (G)"><span class="of" id="pgof"></span></div>
+  <div class="search"><input id="q" placeholder="Найти в статье" aria-label="Поиск по статье"><kbd id="scount">/</kbd><div id="sres" hidden></div></div>
+  <div class="zoom"><button id="zout" title="Мельче (−)" aria-label="Мельче">−</button><span id="zval">100%</span><button id="zin" title="Крупнее (+)" aria-label="Крупнее">+</button><button id="zfit" class="fit" title="По ширине (W)">↔ По ширине</button></div>
+  <button id="build" title="Перезагрузить статью (R)"></button>
+  <button class="hbtn" id="sidebtn" title="Комментарии ( ] )" aria-label="Комментарии">💬<span class="n" id="sidecount"></span></button>
+  <button class="hbtn" id="themebtn" title="Тема (D), тёмные страницы (I)" aria-label="Тема">◐</button>
+  <button class="hbtn" id="helpbtn" title="Горячие клавиши (?)" aria-label="Горячие клавиши">?</button>
+</header>
+<nav id="toc" aria-label="Оглавление"></nav>
+<main id="view" tabindex="-1"><div id="pages"></div></main>
+<aside id="side" aria-label="Комментарии">
+  <div class="filters">
+    <div class="seg" role="tablist" id="seg">
+      <button role="tab" data-f="waiting" title="Ждут ответа ИИ">Ждут<b></b></button>
+      <button role="tab" data-f="answered" title="ИИ ответил — проверьте">С ответом<b></b></button>
+      <button role="tab" data-f="done">Готово<b></b></button>
+      <button role="tab" data-f="all">Все<b></b></button>
+    </div>
+    <div class="chips" id="catf"></div>
+    <div class="sidetools"><span id="sumline"></span><span style="flex:1"></span><button id="export" title="Скачать список открытых комментариев">⤓ Markdown</button></div>
+  </div>
+  <div id="list"></div>
+</aside>
+<div id="selbar" role="toolbar" aria-label="Комментировать выделенное"></div>
+<div id="tip"></div>
+<div id="peek"><canvas></canvas><span class="pp"></span></div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="help"><div class="box">
+  <h2>Горячие клавиши</h2>
+  <table>
+    <tr><td>Выделить мышью → <kbd>C</kbd> или <kbd>Enter</kbd></td><td>комментировать выделенное</td></tr>
+    <tr><td><kbd>1</kbd>…<kbd>5</kbd> после выделения</td><td>комментарий с категорией: опечатка, переписать, факт, вопрос, мысль</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>сохранить комментарий</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>свернуть редактор (черновик сохранится)</td></tr>
+    <tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>следующий / предыдущий комментарий</td></tr>
+    <tr><td><kbd>/</kbd></td><td>поиск по статье (Enter — следующее совпадение)</td></tr>
+    <tr><td><kbd>G</kbd></td><td>перейти на страницу</td></tr>
+    <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>W</kbd></td><td>масштаб, по ширине</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>скрыть или показать оглавление и комментарии</td></tr>
+    <tr><td><kbd>R</kbd></td><td>загрузить пересобранную статью</td></tr>
+    <tr><td>Клик по ссылке, <kbd>Alt</kbd>+<kbd>←</kbd></td><td>перейти (литература, формула, раздел) и вернуться</td></tr>
+    <tr><td>Навести на ссылку</td><td>предпросмотр места, куда она ведёт</td></tr>
+    <tr><td><kbd>D</kbd> / <kbd>I</kbd></td><td>тема: авто, светлая, тёмная / тёмные страницы</td></tr>
+  </table>
+  <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Клавиши работают в любой раскладке. Закрыть — <kbd>Esc</kbd> или клик мимо.</p>
+</div></div>
+
+<script src="/vendor/pdf.min.js"></script>
+<script>
+"use strict";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+const $ = s => document.querySelector(s);
+const view = $("#view"), pagesEl = $("#pages"), selbar = $("#selbar"), listEl = $("#list");
+const CATS = [
+  { k: "typo", n: "Опечатка", ph: "Что исправить?" },
+  { k: "rewrite", n: "Переписать", ph: "Как переписать? Что не так?" },
+  { k: "fact", n: "Проверить факт", ph: "Что проверить?" },
+  { k: "ask", n: "Вопрос", ph: "Ваш вопрос" },
+  { k: "idea", n: "Мысль", ph: "Мысль, идея" },
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.k, c]));
+const PT = 96 / 72;
+
+// ---------------------------------------------------------------- состояние
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem("kom." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("kom." + k, JSON.stringify(v)); } catch (e) {} },
+};
+let pdf = null, pdfMtime = 0, labels = null, outline = [], chapters = [];
+let scale = 1.4, fit = LS.get("fit", true);
+let comments = [], activeId = null, curPage = 1;
+let filter = "waiting", catFilter = new Set(LS.get("cats", [])), onlyChapter = LS.get("onlyChapter", false);
+let composer = null, editingThread = null, threadText = "", openMenu = null, expandedDone = new Set(), offline = false;
+let pending = null;              // текущее выделение {page, pageEnd, quote, spans:{стр:[от,до]}, ctx}
+const pageState = new Map();     // n -> {el, rendered, textDivs, idx, marks:[]}
+const textCache = new Map();     // n -> {raw, norm}
+const deleting = new Map();      // id -> timer
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+const lbl = n => !n ? "?" : (labels && labels[n - 1]) || String(n);
+const isTyping = () => { const a = document.activeElement; return a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT" || a.isContentEditable); };
+function hash(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+
+async function api(path, opts) {
+  const o = { method: "GET" };
+  if (opts) { o.method = opts.method || "POST"; o.headers = { "Content-Type": "application/json" };
+    if (opts.body) o.body = JSON.stringify(opts.body); if (opts.keepalive) o.keepalive = true; }
+  const r = await fetch(path, o);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
+}
+
+// ---------------------------------------------------------------- модель комментария
+function msgs(c) {             // вся переписка по порядку
+  const m = [];
+  if (c.reply) m.push({ who: "ai", text: c.reply });
+  for (const t of c.thread || []) m.push(t);
+  return m;
+}
+const lastWho = c => { const m = msgs(c); return m.length ? m[m.length - 1].who : "author"; };
+const isDone = c => c.status === "done";
+const isAnswered = c => !isDone(c) && lastWho(c) === "ai";
+const isWaiting = c => !isDone(c) && !isAnswered(c);
+const fp = c => hash(msgs(c).filter(m => m.who === "ai").map(m => m.text).join("|"));
+const isNew = c => isAnswered(c) && c.reply_seen !== fp(c);
+const catOf = c => CAT[c.category] ? c.category : "rewrite";
+const pageOf = c => c._page || c.page;
+
+// ---------------------------------------------------------------- нормализация текста
+const SKIP = /[\s\-­‐‑‒–—"«»„“”'’.,;:!?()\[\]·…]/;
+function normChars(str) {     // [[символ, начало, конец], ...] без пробелов, дефисов и пунктуации
+  const out = [];
+  for (let i = 0; i < str.length;) {
+    const ch = String.fromCodePoint(str.codePointAt(i)); const len = ch.length;
+    for (const x of ch.normalize("NFKC").toLowerCase().replace(/ё/g, "е")) if (!SKIP.test(x)) out.push([x, i, i + len]);
+    i += len;
+  }
+  return out;
+}
+const normStr = s => normChars(s).map(x => x[0]).join("");
+
+async function pageText(n) {
+  if (textCache.has(n)) return textCache.get(n);
+  const page = await pdf.getPage(n); const tc = await page.getTextContent(); const H = page.getViewport({ scale: 1 }).height;
+  const raw = tc.items.map(i => i.str + (i.hasEOL ? "\n" : "")).join("");
+  const bodyItems = tc.items.filter(i => { const yTop = H - i.transform[5]; return yTop > H * .075 && yTop < H * .94; });
+  const body = bodyItems.map(i => i.str + (i.hasEOL ? "\n" : "")).join("");
+  const v = { raw, norm: normStr(raw), body: normStr(body) }; textCache.set(n, v); return v;
+}
+
+// где в нормализованном тексте страницы лежит цитата: [from, to) или null
+function findAll(norm, q) { const out = []; if (!q) return out; let i = norm.indexOf(q); while (i >= 0) { out.push(i); i = norm.indexOf(q, i + 1); } return out; }
+function ctxScore(norm, at, len, ctx) {
+  let s = 0; const b = ctx.before || "", a = ctx.after || "";
+  for (let k = 1; k <= b.length && at - k >= 0 && norm[at - k] === b[b.length - k]; k++) s++;
+  for (let k = 0; k < a.length && at + len + k < norm.length && norm[at + len + k] === a[k]; k++) s++;
+  return s;
+}
+function findIn(norm, q, ctx) {
+  if (!q) return null;
+  const all = findAll(norm, q);
+  if (all.length) {
+    let at = all[0];
+    if (all.length > 1 && ctx) { let best = -1; for (const i of all) { const sc = ctxScore(norm, i, q.length, ctx); if (sc > best) { best = sc; at = i; } } }
+    return [at, at + q.length];
+  }
+  let at;
+  if (q.length < 16) return null;
+  const head = q.slice(0, 24); at = norm.indexOf(head);         // начало совпало — тянем, пока совпадает
+  if (at >= 0) { let k = head.length; while (at + k < norm.length && k < q.length && norm[at + k] === q[k]) k++; return [at, at + k]; }
+  const tail = q.slice(-24); at = norm.indexOf(tail);              // конец совпал (цитата пришла с прошлой страницы)
+  if (at >= 0) { let k = tail.length; const qs = q.length - tail.length; while (at - (k - tail.length) - 1 >= 0 && qs - (k - tail.length) - 1 >= 0 && norm[at - (k - tail.length) - 1] === q[qs - (k - tail.length) - 1]) k++; return [at + tail.length - k, at + tail.length]; }
+  return null;
+}
+
+// найти, где комментарий сейчас в книге (после пересборки текст мог сдвинуться)
+async function relocate(c) {
+  const q = normStr(c.quote || ""); c._stale = false; c._cross = false; c._page = c.page;
+  if (!q || !c.page) return;
+  const cands = [c.page, c.pageEnd, c.page - 1, c.page + 1, c.page - 2, c.page + 2, c.page - 3, c.page + 3, c.page + 4, c.page - 4]
+    .filter((p, i, a) => p >= 1 && p <= pdf.numPages && a.indexOf(p) === i);
+  for (const p of cands) { const t = await pageText(p); if (findIn(t.norm, q, c.ctx)) { c._page = p; return; } }
+  for (const p of cands) {                         // цитата через разрыв страницы
+    if (p >= pdf.numPages) continue;
+    const a = await pageText(p), b = await pageText(p + 1);
+    const hit = findIn(a.body + b.body, q) || findIn(a.norm + b.norm, q);
+    if (hit && hit[1] - hit[0] >= Math.min(q.length, 16)) { c._page = p; c._cross = true; return; }
+  }
+  // книгу не пересобирали после комментария — текст не мог измениться
+  const made = c.created ? Date.parse(c.created.replace(" ", "T")) : 0;
+  if (made && made >= pdfMtime * 1000 - 60000) return;
+  c._stale = true;
+}
+
+// ---------------------------------------------------------------- PDF
+async function openPdf(keep) {
+  const pos = keep ? savePos() : LS.get("pos", null);
+  let info;
+  try { info = await api("/api/pdfinfo"); } catch (e) { info = { mtime: 0 }; }
+  if (!info.mtime) { pagesEl.innerHTML = `<div class="state"><span style="font-size:32px">📕</span><br>PDF ещё не собран (ищу <code>main.pdf</code> и <code>build/main.pdf</code>). Соберите статью, лучше с <code>latexmk -synctex=1</code> — читалка подхватит PDF сама.</div>`;
+    setTimeout(() => openPdf(keep), 5000); return; }
+  pdfMtime = info.mtime; textCache.clear();
+  pdf = await pdfjsLib.getDocument({ url: "/book.pdf?t=" + pdfMtime }).promise;
+  labels = await pdf.getPageLabels();
+  try { const meta = await pdf.getMetadata(); const t = (meta.info && meta.info.Title || "").trim() || (await api("/api/info")).title;
+    if (t) { $("#title").textContent = t; document.title = t + " — читалка"; } } catch (e) {}
+  $("#pgof").textContent = "из " + lbl(pdf.numPages);
+  setBuild(false);
+  await buildOutline();
+  await layoutPages();
+  if (pos) restorePos(pos);
+  onScroll();
+}
+
+async function buildOutline() {
+  outline = [];
+  async function walk(list, level) {
+    for (const it of list || []) {
+      let page = null;
+      try { const d = typeof it.dest === "string" ? await pdf.getDestination(it.dest) : it.dest;
+        if (d) page = (await pdf.getPageIndex(d[0])) + 1; } catch (e) {}
+      const part = level === 0 && /^[IVX]+\s/.test(it.title);
+      outline.push({ title: it.title.replace(/\s+/g, " ").trim(), page, level, part });
+      if (it.items && it.items.length && level < 2) await walk(it.items, level + 1);
+    }
+  }
+  await walk(await pdf.getOutline(), 0);
+  // главы: не части, не подразделы; подразделы — следующий уровень после главы
+  chapters = [];
+  for (let i = 0; i < outline.length; i++) {
+    const o = outline[i];
+    if (o.part || !o.page) continue;
+    const parentPart = outline.slice(0, i).reverse().find(x => x.level < o.level);
+    const isChapter = (o.level === 0) || (parentPart && parentPart.part && o.level === parentPart.level + 1);
+    if (isChapter) { o.chapter = true; chapters.push(o); } else o.sec = true;
+  }
+  chapters.forEach((c, i) => c.end = (chapters[i + 1] ? chapters[i + 1].page - 1 : pdf.numPages));
+}
+function chapterOf(p) { let best = null; for (const c of chapters) if (c.page <= p) best = c; return best; }
+function sectionOf(p) { const ch = chapterOf(p); let best = null;
+  for (const o of outline) if (o.sec && o.page && o.page <= p && ch && o.page >= ch.page) best = o; return best; }
+
+function computeScale(page1) {
+  const vp = page1.getViewport({ scale: 1 });
+  if (fit) { const w = view.clientWidth - 64; scale = Math.max(.5, Math.min(w / vp.width, 2.4)); }
+  $("#zval").textContent = Math.round(scale / PT * 100) + "%";
+  $("#zfit").classList.toggle("on", fit);
+  return vp;
+}
+
+async function layoutPages() {
+  pagesEl.innerHTML = ""; pageState.clear();
+  const p1 = await pdf.getPage(1); const vp1 = computeScale(p1);
+  const w = Math.floor(vp1.width * scale), h = Math.floor(vp1.height * scale);
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const el = document.createElement("div"); el.className = "page"; el.dataset.n = n; el.id = "p" + n;
+    el.style.width = w + "px"; el.style.height = h + "px";
+    el.innerHTML = `<div class="hlLayer"></div><div class="selLayer"></div><span class="pnum">${esc(lbl(n))}</span>`;
+    frag.appendChild(el); pageState.set(n, { el, rendered: false, marks: [] });
+  }
+  pagesEl.appendChild(frag);
+  for (const st of pageState.values()) io.observe(st.el);
+}
+
+const io = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) renderPage(+e.target.dataset.n); },
+  { root: view, rootMargin: "1500px 0px" });
+
+async function renderPage(n) {
+  const st = pageState.get(n); if (!st || st.rendered) return; st.rendered = true;
+  const myScale = scale;
+  const page = await pdf.getPage(n); const vp = page.getViewport({ scale });
+  if (myScale !== scale || pageState.get(n) !== st) return;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(vp.width * ratio); canvas.height = Math.floor(vp.height * ratio);
+  canvas.style.width = vp.width + "px"; canvas.style.height = vp.height + "px";
+  st.el.prepend(canvas);
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null }).promise;
+  const tl = document.createElement("div"); tl.className = "textLayer"; tl.style.setProperty("--scale-factor", scale);
+  st.el.appendChild(tl);
+  const textDivs = [];
+  await pdfjsLib.renderTextLayer({ textContentSource: await page.getTextContent(), container: tl, viewport: vp, textDivs }).promise;
+  const eoc = document.createElement("div"); eoc.className = "endOfContent"; tl.appendChild(eoc);
+  tl.addEventListener("mousedown", () => { tl.classList.add("selecting"); document.body.classList.add("selecting"); });
+  st.textDivs = textDivs; st.idx = null;
+  await renderLinks(page, vp, st);
+  paintPage(n);
+  if (!window.getSelection().isCollapsed) drawLiveSelection();
+}
+
+// ---------------------------------------------------------------- ссылки внутри PDF
+async function renderLinks(page, vp, st) {
+  let annots; try { annots = await page.getAnnotations({ intent: "display" }); } catch (e) { return; }
+  const layer = document.createElement("div"); layer.className = "linkLayer";
+  for (const a of annots) {
+    if (a.subtype !== "Link" || !(a.url || a.dest)) continue;
+    const [x1, y1, x2, y2] = vp.convertToViewportRectangle(a.rect);
+    const el = document.createElement("a");
+    Object.assign(el.style, { left: Math.min(x1, x2) + "px", top: Math.min(y1, y2) + "px", width: Math.abs(x2 - x1) + "px", height: Math.abs(y2 - y1) + "px" });
+    if (a.url) { el.href = a.url; el.target = "_blank"; el.rel = "noopener"; el.title = a.url; }
+    else { el.href = "#"; el._dest = a.dest; }
+    layer.appendChild(el);
+  }
+  if (layer.children.length) st.el.appendChild(layer);
+}
+// назначение ссылки → {n, x, y} в пунктах PDF (y от низа страницы, как в PDF)
+async function resolveDest(dest) {
+  try {
+    const d = typeof dest === "string" ? await pdf.getDestination(dest) : dest; if (!d) return null;
+    const n = (typeof d[0] === "object" ? await pdf.getPageIndex(d[0]) : d[0]) + 1;
+    const kind = d[1] && d[1].name; let x = null, y = null;
+    if (kind === "XYZ") { x = d[2]; y = d[3]; } else if (kind === "FitH" || kind === "FitBH") y = d[2]; else if (kind === "FitR") { x = d[2]; y = d[5]; }
+    return { n, x, y };
+  } catch (e) { return null; }
+}
+async function destTop(t, sc) { if (t.y == null) return 0; const page = await pdf.getPage(t.n); return page.getViewport({ scale: sc }).convertToViewportPoint(t.x || 0, t.y)[1]; }
+const navStack = [];
+function pushNav() { const p = savePos(); if (p) { navStack.push(p); if (navStack.length > 50) navStack.shift(); } $("#backbtn").hidden = !navStack.length; }
+function goBack() { const p = navStack.pop(); $("#backbtn").hidden = !navStack.length; if (p) { restorePos(p); onScroll(); } }
+$("#backbtn").onclick = goBack;
+async function followLink(a) {
+  const t = await resolveDest(a._dest); if (!t || !pageState.get(t.n)) return;
+  hidePeek(); pushNav();
+  const y = await destTop(t, scale), st = pageState.get(t.n);
+  view.scrollTo({ top: st.el.offsetTop + y - 40, behavior: "smooth" });
+  const bar = document.createElement("div"); bar.className = "hl-dest"; bar.style.top = Math.max(0, y - 2) + "px";
+  st.el.appendChild(bar); setTimeout(() => bar.remove(), 2300);
+}
+pagesEl.addEventListener("click", e => { const a = e.target.closest(".linkLayer a"); if (a && a._dest) { e.preventDefault(); followLink(a); } });
+
+// предпросмотр: полоса страницы, куда ведёт ссылка (литература, формула, теорема)
+const peekCache = new Map(); let peekTimer = 0, peekOn = null;
+async function pageBitmap(n, sc) {
+  const key = n + "@" + sc; if (peekCache.has(key)) return peekCache.get(key);
+  const page = await pdf.getPage(n), vp = page.getViewport({ scale: sc }), ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const c = document.createElement("canvas"); c.width = Math.floor(vp.width * ratio); c.height = Math.floor(vp.height * ratio);
+  await page.render({ canvasContext: c.getContext("2d"), viewport: vp, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null }).promise;
+  peekCache.set(key, c); if (peekCache.size > 8) peekCache.delete(peekCache.keys().next().value); return c;
+}
+async function showPeek(a) {
+  const t = await resolveDest(a._dest); if (!t || peekOn !== a) return;
+  const sc = 1.15, ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const src = await pageBitmap(t.n, sc); if (peekOn !== a) return;
+  const top = Math.max(0, (await destTop(t, sc)) - 14), W = src.width / ratio, H = Math.min(190, src.height / ratio - top);
+  const box = $("#peek"), cv = box.querySelector("canvas");
+  cv.width = Math.floor(W * ratio); cv.height = Math.floor(H * ratio); cv.style.width = W + "px"; cv.style.height = H + "px";
+  cv.getContext("2d").drawImage(src, 0, top * ratio, W * ratio, H * ratio, 0, 0, W * ratio, H * ratio);
+  box.querySelector(".pp").textContent = "стр. " + lbl(t.n) + " · клик — перейти";
+  const r = a.getBoundingClientRect(); box.style.display = "block";
+  const left = Math.max(8, Math.min(r.left + r.width / 2 - W / 2, innerWidth - W - 8));
+  const below = r.bottom + 10 + H < innerHeight;
+  box.style.left = left + "px"; box.style.top = (below ? r.bottom + 10 : Math.max(8, r.top - H - 10)) + "px";
+}
+function hidePeek() { peekOn = null; clearTimeout(peekTimer); $("#peek").style.display = "none"; }
+pagesEl.addEventListener("mouseover", e => {
+  const a = e.target.closest(".linkLayer a"); if (!a || !a._dest || e.buttons) return;
+  if (peekOn === a) return; hidePeek(); peekOn = a; peekTimer = setTimeout(() => showPeek(a), 300);
+});
+pagesEl.addEventListener("mouseout", e => { const a = e.target.closest(".linkLayer a"); if (a && !a.contains(e.relatedTarget)) hidePeek(); });
+view.addEventListener("scroll", () => { if (peekOn) hidePeek(); }, { passive: true });
+
+// индекс страницы: нормализованный текст и откуда каждый символ взят
+function pageIndex(st) {
+  if (st.idx) return st.idx;
+  let norm = ""; const own = [];
+  st.textDivs.forEach((d, di) => { for (const [x, a, b] of normChars(d.textContent)) { norm += x; own.push([di, a, b]); } });
+  return (st.idx = { norm, own });
+}
+function rectsFor(n, from, to) {           // прямоугольники для символов [from, to) в координатах страницы
+  const st = pageState.get(n); const ix = pageIndex(st);
+  if (from >= to || !ix.own[from]) return [];
+  const [d1, a1] = ix.own[from], [d2, , b2] = ix.own[to - 1];
+  const n1 = st.textDivs[d1].firstChild, n2 = st.textDivs[d2].firstChild; if (!n1 || !n2) return [];
+  const r = document.createRange(); r.setStart(n1, a1); r.setEnd(n2, b2);
+  return clientToPage(st.el, r.getClientRects());
+}
+function clientToPage(el, list) {
+  const base = el.getBoundingClientRect(); const out = [], seen = new Set();
+  for (const q of list) {
+    if (q.width < .5 || q.height < .5) continue;
+    const x = q.left - base.left, y = q.top - base.top;
+    if (q.height > 50 * scale) continue;               // целые блоки, а не строки
+    const key = [x, y, q.width, q.height].map(Math.round).join(",");
+    if (seen.has(key)) continue; seen.add(key);
+    out.push({ x, y, w: q.width, h: q.height });
+  }
+  return smoothRects(out);
+}
+// Сплошная подсветка: в формуле каждый символ — отдельный элемент своей высоты.
+// 1) полосы: прямоугольники, перекрывающиеся по вертикали (числитель, знаменатель,
+//    индексы и корень попадают в полосу своей строки, соседние строки текста — нет);
+// 2) в полосе соседние куски склеиваются по горизонтали в одну рамку.
+function smoothRects(rs) {
+  const n = rs.length; if (!n) return rs;
+  const parent = rs.map((_, i) => i), find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const a = rs[i], b = rs[j], ov = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (ov > .2 * Math.min(a.h, b.h)) parent[find(i)] = find(j);
+  }
+  const bands = new Map(); rs.forEach((r, i) => { const k = find(i); if (!bands.has(k)) bands.set(k, []); bands.get(k).push(r); });
+  const out = [];
+  for (const items of bands.values()) {
+    items.sort((a, b) => a.x - b.x);
+    const hs = items.map(r => r.h).sort((a, b) => a - b), tol = Math.max(6, hs[hs.length >> 1] * .9);
+    let cur = null;
+    for (const r of items) {
+      if (cur && r.x <= cur.x2 + tol) { cur.x2 = Math.max(cur.x2, r.x + r.w); cur.y1 = Math.min(cur.y1, r.y); cur.y2 = Math.max(cur.y2, r.y + r.h); }
+      else { if (cur) out.push(cur); cur = { x1: r.x, x2: r.x + r.w, y1: r.y, y2: r.y + r.h }; }
+    }
+    out.push(cur);
+  }
+  return out.map(c => ({ x: c.x1 - 1, y: c.y1, w: c.x2 - c.x1 + 2, h: c.y2 - c.y1 })).sort((a, b) => a.y - b.y || a.x - b.x);
+}
+// живое выделение рисуем сами (браузерное у формул рассыпается на квадраты)
+let selRaf = 0; const selDrawn = new Set();
+document.addEventListener("selectionchange", () => { if (!selRaf) selRaf = requestAnimationFrame(() => { selRaf = 0; drawLiveSelection(); }); });
+function clearLiveSelection() { for (const n of selDrawn) { const l = pageState.get(n)?.el.querySelector(".selLayer"); if (l) l.innerHTML = ""; } selDrawn.clear(); }
+function drawLiveSelection() {
+  clearLiveSelection();
+  const sel = window.getSelection(); if (!sel.rangeCount || sel.isCollapsed) return;
+  const r = sel.getRangeAt(0), host = r.commonAncestorContainer;
+  const hostEl = host.nodeType === 1 ? host : host.parentElement; if (!hostEl || !(hostEl.closest(".page") || hostEl.contains(pagesEl) || pagesEl.contains(hostEl))) return;
+  const pages = [...pageState.entries()].filter(([, st]) => st.textDivs).map(([n, st]) => [n, st.el, st.el.getBoundingClientRect()]);
+  const byPage = new Map();
+  for (const q of r.getClientRects()) {
+    const cy = q.top + q.height / 2, hit = pages.find(([, , b]) => cy >= b.top && cy <= b.bottom && q.left >= b.left - 2 && q.right <= b.right + 2);
+    if (!hit) continue; if (!byPage.has(hit[0])) byPage.set(hit[0], { el: hit[1], list: [] }); byPage.get(hit[0]).list.push(q);
+  }
+  for (const [n, { el, list }] of byPage) {
+    const layer = el.querySelector(".selLayer"); if (!layer) continue;
+    layer.innerHTML = clientToPage(el, list).map(b => `<div class="sel" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px"></div>`).join("");
+    selDrawn.add(n);
+  }
+}
+function visibleByFilter(c) {
+  if (deleting.has(c.id)) return false;
+  if (filter === "waiting" && !isWaiting(c)) return false;
+  if (filter === "answered" && !isAnswered(c)) return false;
+  if (filter === "done" && !isDone(c)) return false;
+  if (catFilter.size && !catFilter.has(catOf(c))) return false;
+  if (onlyChapter) { const ch = chapterOf(curPage), cc = chapterOf(pageOf(c)); if (!ch || !cc || ch !== cc) return false; }
+  return true;
+}
+function marksVisible(c) {             // на странице показываем открытые всегда, решённые — в «Готово/Все»
+  if (deleting.has(c.id) || c._stale) return false;
+  if (isDone(c)) return filter === "done" || filter === "all";
+  if (catFilter.size && !catFilter.has(catOf(c))) return false;
+  return true;
+}
+
+function paintPage(n) {
+  const st = pageState.get(n); if (!st || !st.textDivs) return;
+  const layer = st.el.querySelector(".hlLayer"); layer.innerHTML = ""; st.marks = [];
+  const ix = pageIndex(st);
+  for (const c of comments) {
+    if (!marksVisible(c)) continue;
+    const pages = [pageOf(c)]; if (c.pageEnd && c.pageEnd !== c.page) pages.push(c.pageEnd + (pageOf(c) - c.page)); if (c._cross && !pages.includes(pageOf(c) + 1)) pages.push(pageOf(c) + 1);
+    if (!pages.includes(n)) continue;
+    const qn = normStr(c.quote || "");
+    let span = findIn(ix.norm, qn, n === pageOf(c) ? c.ctx : null);
+    if (!span && pages.length > 1) span = n === pages[0] ? prefixSpan(ix.norm, qn) : suffixSpan(ix.norm, qn);
+    if (!span) continue;
+    const rects = rectsFor(n, span[0], span[1]); if (!rects.length) continue;
+    const cls = `mark cat-${catOf(c)}${isDone(c) ? " done" : ""}${c.id === activeId ? " active" : ""}`;
+    for (const r of rects) layer.insertAdjacentHTML("beforeend", `<div class="${cls}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"></div>`);
+    if (isAnswered(c)) { const l = rects[rects.length - 1]; layer.insertAdjacentHTML("beforeend", `<div class="pin" title="ИИ ответил" style="left:${st.el.offsetWidth - 34}px;top:${l.y + l.h / 2}px">ИИ</div>`); }
+    st.marks.push({ id: c.id, rects, len: span[1] - span[0] });
+  }
+  const sp = composer && composer.spans ? composer.spans : pending && window.getSelection().isCollapsed ? pending.spans : null;
+  if (sp && sp[n]) for (const r of rectsFor(n, sp[n][0], sp[n][1])) layer.insertAdjacentHTML("beforeend", `<div class="pending" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"></div>`);
+}
+// цитата через разрыв страницы: на первой странице — самое длинное начало цитаты
+// (ближе к концу страницы), на второй — самый длинный конец (ближе к началу)
+function prefixSpan(norm, q) {
+  for (let k = q.length - 1; k >= 6; k--) { const at = norm.lastIndexOf(q.slice(0, k)); if (at >= 0) return [at, at + k]; }
+  return null;
+}
+function suffixSpan(norm, q) {
+  for (let k = q.length - 1; k >= 6; k--) { const at = norm.indexOf(q.slice(q.length - k)); if (at >= 0) return [at, at + k]; }
+  return null;
+}
+function repaintAll() { for (const n of pageState.keys()) paintPage(n); }
+
+// ---------------------------------------------------------------- позиция и навигация
+function pageTops() { return [...pageState.values()].map(s => s.el.offsetTop); }
+function currentPageAt(y) {
+  const tops = pageTops(); let lo = 0, hi = tops.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (tops[m] <= y) lo = m; else hi = m - 1; }
+  return lo + 1;
+}
+function savePos() {
+  if (!pageState.size) return null;
+  const y = view.scrollTop + 60; const p = currentPageAt(y); const st = pageState.get(p);
+  return { page: p, frac: (y - st.el.offsetTop) / st.el.offsetHeight };
+}
+function restorePos(pos) {
+  const st = pageState.get(Math.min(pos.page, pdf.numPages)); if (!st) return;
+  view.scrollTop = st.el.offsetTop + pos.frac * st.el.offsetHeight - 60;
+}
+function goPage(n, y) {
+  const st = pageState.get(n); if (!st) return;
+  view.scrollTo({ top: st.el.offsetTop + (y || 0) - (y ? view.clientHeight / 3 : 16), behavior: "smooth" });
+}
+let scrollRaf = 0, posTimer = 0;
+function onScroll() {
+  if (scrollRaf) return;
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0; if (!pdf) return;
+    const p = currentPageAt(view.scrollTop + view.clientHeight * .3);
+    if (p !== curPage) { const chChanged = chapterOf(p) !== chapterOf(curPage); curPage = p; updateWhere(); if (chChanged) { renderToc(); if (onlyChapter) renderList(); } }
+    if (pending && pending.y0 !== undefined && Math.abs(view.scrollTop - pending.y0) > view.clientHeight) hideSelbar();
+    else if (selbar.classList.contains("show")) placeSelbar();
+    clearTimeout(posTimer); posTimer = setTimeout(() => LS.set("pos", savePos()), 400);
+  });
+}
+view.addEventListener("scroll", onScroll);
+function updateWhere() {
+  const ch = chapterOf(curPage), sec = sectionOf(curPage);
+  $("#crumb").innerHTML = ch ? esc(ch.title) + (sec ? ` › <b>${esc(sec.title)}</b>` : "") : "";
+  if (document.activeElement !== $("#pg")) $("#pg").value = lbl(curPage);
+  document.querySelectorAll("#toc a.cur").forEach(a => a.classList.remove("cur"));
+  const cur = sec || ch; if (cur) { const a = document.querySelector(`#toc a[data-o="${outline.indexOf(cur)}"]`); if (a) a.classList.add("cur"); }
+}
+$("#pg").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const v = e.target.value.trim(); let n = labels ? labels.indexOf(v) + 1 : 0;
+  if (!n && /^\d+$/.test(v)) n = Math.min(+v, pdf.numPages);
+  if (n) { view.focus({ preventScroll: true }); pushNav(); goPage(n); } else toast("Нет такой страницы: " + v);
+});
+$("#pg").addEventListener("keydown", e => { if (e.key === "Escape") { e.target.value = lbl(curPage); view.focus({ preventScroll: true }); } });
+$("#pg").addEventListener("focus", e => e.target.select());
+
+// ---------------------------------------------------------------- оглавление
+function renderToc() {
+  const counts = new Map();
+  for (const c of comments) if (!isDone(c) && !deleting.has(c.id)) { const ch = chapterOf(pageOf(c)); if (ch) counts.set(ch, (counts.get(ch) || 0) + 1); }
+  const curCh = chapterOf(curPage); let html = `<div class="cap">Оглавление</div>`, inCur = false;
+  outline.forEach((o, i) => {
+    if (o.chapter) inCur = o === curCh;
+    if (o.sec && !inCur) return;
+    if (!o.part && !o.chapter && !o.sec) return;
+    const cls = o.part ? "part" : o.sec ? "sec" : "";
+    const n = o.chapter && counts.get(o) ? `<span class="pill" title="открытых комментариев">${counts.get(o)}</span>` : "";
+    html += `<a class="${cls}" data-o="${i}" data-p="${o.page || ""}" tabindex="0"><span class="t">${esc(o.title)}</span>${n}</a>`;
+  });
+  $("#toc").innerHTML = html; updateWhere();
+}
+$("#toc").addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.dataset.p) { view.focus({ preventScroll: true }); pushNav(); goPage(+a.dataset.p); document.body.classList.remove("toc-open"); } });
+$("#toc").addEventListener("keydown", e => { if (e.key === "Enter") e.target.click(); });
+
+// ---------------------------------------------------------------- выделение
+document.addEventListener("mouseup", e => {
+  document.querySelectorAll(".textLayer.selecting").forEach(t => t.classList.remove("selecting")); document.body.classList.remove("selecting");
+  if (selbar.contains(e.target)) return;
+  const an = window.getSelection().anchorNode, anEl = an && (an.nodeType === 1 ? an : an.parentElement);
+  const fromText = anEl && anEl.closest(".textLayer");
+  if (!fromText && (e.target.closest("#side") || e.target.closest("header"))) return;
+  fixOvershoot(e);
+  setTimeout(() => onSelection(e), 0);
+});
+document.addEventListener("keyup", e => { if (e.shiftKey && !isTyping()) onSelection(); });
+
+// курсор отпустили не над текстом (поле, зазор между страницами): конец выделения
+// ставим в ближайшее место текста по положению курсора
+function fixOvershoot(e) {
+  const sel = window.getSelection(); if (!sel.rangeCount || sel.isCollapsed) return;
+  const inText = n => { const el = n && (n.nodeType === 1 ? n : n.parentElement); return el && el.closest(".textLayer span"); };
+  if (!inText(sel.anchorNode)) return;
+  if (e.target && e.target.closest && e.target.closest(".textLayer span")) return;     // отпустили над текстом — всё честно
+  const pages = [...pageState.values()].map(s => s.el);
+  let target = null;
+  for (const p of pages) { const r = p.getBoundingClientRect(); if (r.top <= e.clientY) target = p; else break; }
+  if (!target) target = pages[0];
+  const st = pageState.get(+target.dataset.n); if (!st || !st.textDivs) return;
+  const pr = target.getBoundingClientRect(), H = pr.height;
+  const body = st.textDivs.filter(d => d.firstChild && d.offsetTop >= H * .075 && d.offsetTop + d.offsetHeight <= H * .94);
+  if (!body.length) return;
+  const y = e.clientY, x = e.clientX;
+  let best = null, bd = 1e9;                           // ближайшая по вертикали строка
+  for (const d of body) { const b = d.getBoundingClientRect(); const dy = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0; if (dy < bd - .5) { bd = dy; best = b; } }
+  const line = body.filter(d => { const b = d.getBoundingClientRect(); return Math.abs(b.top - best.top) < best.height * .5; })
+    .sort((p, q) => p.getBoundingClientRect().left - q.getBoundingClientRect().left);
+  let node, off;
+  const first = line[0], last = line[line.length - 1];
+  if (y > pr.bottom || x >= last.getBoundingClientRect().right) { node = last.firstChild; off = node.length; }
+  else if (x <= first.getBoundingClientRect().left) { node = first.firstChild; off = 0; }
+  else { const cr = document.caretRangeFromPoint && document.caretRangeFromPoint(x, (best.top + best.bottom) / 2);
+    if (cr && inText(cr.startContainer)) { node = cr.startContainer; off = cr.startOffset; } else { node = last.firstChild; off = node.length; } }
+  sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, node, off);
+}
+const WORDCH = /[0-9A-Za-zА-Яа-яЁё̀-ͯ]/;
+function snapToWords(sel) {
+  const r = sel.getRangeAt(0); let { startContainer: sc, startOffset: so, endContainer: ec, endOffset: eo } = r;
+  if (ec.nodeType === 3) while (eo > 0 && /\s/.test(ec.data[eo - 1]) && !(sc === ec && eo - 1 <= so)) eo--;
+  if (sc.nodeType === 3) while (so < sc.data.length && /\s/.test(sc.data[so]) && !(sc === ec && so + 1 >= eo)) so++;
+  if (sc.nodeType === 3) while (so > 0 && WORDCH.test(sc.data[so - 1])) so--;
+  if (ec.nodeType === 3) while (eo < ec.data.length && WORDCH.test(ec.data[eo])) eo++;
+  // слово с переносом в конце строки: дотягиваем до конца слова на следующей строке
+  if (ec.nodeType === 3 && eo === ec.data.length && /[A-Za-zА-Яа-яЁё][-­]$/.test(ec.data)) {
+    let nx = ec.parentElement.nextElementSibling; while (nx && (nx.tagName === "BR" || !nx.firstChild)) nx = nx.nextElementSibling;
+    if (nx && nx.firstChild && nx.firstChild.nodeType === 3) { const t = nx.firstChild; let k = 0; while (k < t.data.length && WORDCH.test(t.data[k])) k++; if (k) { ec = t; eo = k; } }
+  }
+  // незакрытая скобка или кавычка — забираем закрывающую
+  if (ec.nodeType === 3 && eo < ec.data.length) {
+    const r0 = document.createRange(); r0.setStart(sc, so); r0.setEnd(ec, eo); const t = r0.toString();
+    const pairs = { "]": "[", ")": "(", "»": "«" }; const ch = ec.data[eo];
+    if (pairs[ch] && t.split(pairs[ch]).length > t.split(ch).length) eo++;
+  }
+  if (so !== r.startOffset || eo !== r.endOffset || ec !== r.endContainer || sc !== r.startContainer) { const nr = document.createRange(); nr.setStart(sc, so); nr.setEnd(ec, eo); sel.removeAllRanges(); sel.addRange(nr); }
+  return sel.getRangeAt(0);
+}
+function quoteFromRange(r, p1, p2) {
+  let out = "", prev = null;
+  for (let n = p1; n <= p2; n++) {
+    const st = pageState.get(n); if (!st || !st.textDivs) continue;
+    const H = st.el.offsetHeight;
+    for (const d of st.textDivs) {
+      if (!r.intersectsNode(d)) continue;
+      const top = d.offsetTop, bot = top + d.offsetHeight;
+      if (top < H * .075 || bot > H * .94) continue;          // колонтитулы и номера страниц
+      let t = d.textContent;
+      if (d.contains(r.endContainer) || d === r.endContainer) t = t.slice(0, r.endContainer.nodeType === 3 ? r.endOffset : t.length);
+      if (d.contains(r.startContainer) || d === r.startContainer) t = t.slice(r.startContainer.nodeType === 3 ? r.startOffset : 0);
+      if (!t) continue;
+      const box = d.getBoundingClientRect();
+      if (prev) {
+        if (Math.abs(box.top - prev.top) > prev.height * .6 || prev.n !== n) out += "\n";
+        else if (box.left - prev.right > 2 && !/\s$/.test(out) && !/^\s/.test(t)) out += " ";
+      }
+      out += t; prev = { top: box.top, height: box.height, right: box.right, n };
+    }
+  }
+  return out.replace(/(\S)[-­]\n(\S)/g, "$1$2").replace(/\s+/g, " ").trim();
+}
+function onSelection(e) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { hideSelbar(); return; }
+  const r0 = sel.getRangeAt(0);
+  const pg = node => { const el = node.nodeType === 1 ? node : node.parentElement; return el && el.closest(".page"); };
+  const a = pg(r0.startContainer), b = pg(r0.endContainer);
+  if (!a || !b) return;
+  const r = snapToWords(sel);
+  const p1 = +a.dataset.n, p2 = +b.dataset.n;
+  const quote = quoteFromRange(r, Math.min(p1, p2), Math.max(p1, p2));
+  if (quote.replace(/\s/g, "").length < 2) { hideSelbar(); return; }
+  const spans = {}, lo = Math.min(p1, p2), hi = Math.max(p1, p2);
+  for (let n = lo; n <= hi; n++) {
+    const st = pageState.get(n); if (!st || !st.textDivs) continue;
+    const ix = pageIndex(st), H = st.el.offsetHeight; let f = -1, t = -1;
+    ix.own.forEach(([di, a, b], k) => {
+      const d = st.textDivs[di]; if (!d.firstChild) return;
+      if (d.offsetTop < H * .075 || d.offsetTop + d.offsetHeight > H * .94) return;
+      try { if (r.comparePoint(d.firstChild, a) >= 0 && r.comparePoint(d.firstChild, b) <= 0) { if (f < 0) f = k; t = k + 1; } } catch (er) {}
+    });
+    if (f >= 0) spans[n] = [f, t];
+  }
+  if (!Object.keys(spans).length) { hideSelbar(); return; }
+  const first = +Object.keys(spans)[0], last = +Object.keys(spans).pop();
+  const ixF = pageIndex(pageState.get(first)), ixL = pageIndex(pageState.get(last));
+  const ctx = { before: ixF.norm.slice(Math.max(0, spans[first][0] - 30), spans[first][0]), after: ixL.norm.slice(spans[last][1], spans[last][1] + 30) };
+  pending = { page: first, pageEnd: last, quote, spans, ctx, y0: view.scrollTop };
+  paintPage(first); if (last !== first) paintPage(last);
+  showSelbar();
+}
+function showSelbar() {
+  selbar.innerHTML = `<button class="go" data-c="">Комментировать <kbd>C</kbd></button><span class="sep"></span>` +
+    CATS.map((c, i) => `<button class="dot cat-${c.k}" data-c="${c.k}" title="${c.n} — клавиша ${i + 1}" aria-label="${c.n}"><i></i><span>${["Опечатка", "Переписать", "Факт", "Вопрос", "Мысль"][i]}</span><small>${i + 1}</small></button>`).join("");
+  selbar.style.display = "flex"; placeSelbar(); requestAnimationFrame(() => selbar.classList.add("show"));
+}
+function placeSelbar() {
+  if (!pending) return;
+  const n = pending.page, st = pageState.get(n); const sp = pending.spans[n];
+  const rs = sp ? rectsFor(n, sp[0], sp[1]) : null;
+  if (!st || !rs || !rs.length) { hideSelbar(); return; }
+  const base = st.el.getBoundingClientRect(), vb = view.getBoundingClientRect();
+  const spE = pending.spans[pending.pageEnd]; const lastP = spE ? rectsFor(pending.pageEnd, spE[0], spE[1]) : rs;
+  const first = rs[0]; const last = lastP[lastP.length - 1] || first;
+  const bw = selbar.offsetWidth, bh = selbar.offsetHeight;
+  // по умолчанию — ПОД выделением: над ним браузер (например, Яндекс) показывает свою кнопку «Копировать»
+  const lb = pageState.get(pending.pageEnd).el.getBoundingClientRect();
+  let ax = lb.left + last.x + last.w / 2, y = lb.top + last.y + last.h + 12, below = true;
+  if (y + bh > innerHeight - 8) { ax = base.left + first.x + first.w / 2; y = base.top + first.y - bh - 12; below = false; }
+  let x = ax - bw / 2; x = Math.max(base.left + 8, Math.min(x, base.right - bw - 8));
+  y = Math.max(vb.top + 8, Math.min(y, innerHeight - bh - 8));
+  selbar.classList.toggle("below", below);
+  selbar.style.left = x + "px"; selbar.style.top = y + "px";
+  selbar.style.setProperty("--ax", Math.max(14, Math.min(bw - 14, ax - x)) + "px");
+}
+function hideSelbar(keepPending) {
+  selbar.classList.remove("show"); selbar.style.display = "none";
+  if (!keepPending) { const had = pending; pending = null; if (had) for (let n = had.page; n <= had.pageEnd; n++) paintPage(n); }
+}
+selbar.addEventListener("mousedown", e => e.preventDefault());
+selbar.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; startComposer(b.dataset.c || LS.get("lastCat", "rewrite")); });
+
+// ---------------------------------------------------------------- редактор
+const hasContent = c => !!(c && (c.text.trim() || (c.showSug && c.suggestion && c.suggestion.trim() !== c.quote.trim())));
+function startComposer(cat) {
+  if (!pending) return;
+  if (composer && (composer.mode === "edit" || hasContent(composer))) {
+    hideSelbar(true); window.getSelection().removeAllRanges(); pending = null; repaintAll();
+    toast("Сначала сохраните или отмените начатый комментарий"); openSide(); focusComposer(); return;
+  }
+  const old = composer; hideSelbar(true); window.getSelection().removeAllRanges();
+  const ch = chapterOf(pending.page), sec = sectionOf(pending.page);
+  composer = { mode: "new", did: Math.random().toString(36).slice(2), page: pending.page, pageEnd: pending.pageEnd, quote: pending.quote,
+    spans: pending.spans, ctx: pending.ctx, where: (sec || ch || {}).title || "", cat, text: "", suggestion: "", showSug: cat === "typo", ...anchorsOf(pending) };
+  pending = null;
+  if (old) for (let n = old.page; n <= (old.pageEnd || old.page); n++) paintPage(n);
+  for (let n = composer.page; n <= composer.pageEnd; n++) paintPage(n);
+  openSide(); renderList(); focusComposer();
+}
+// начало и конец выделения в пунктах PDF от левого верхнего угла (так считает SyncTeX)
+function anchorsOf(p) {
+  const at = (n, first) => { const sp = p.spans[n]; const rs = sp ? rectsFor(n, sp[0], sp[1]) : []; const r = first ? rs[0] : rs[rs.length - 1]; if (!r) return null;
+    return { page: n, x: +((first ? r.x + 3 : r.x + r.w - 3) / scale).toFixed(2), y: +((r.y + r.h * .65) / scale).toFixed(2) }; };
+  return { anchor: at(p.page, true), anchorEnd: at(p.pageEnd, false) };
+}
+function editComposer(c) {
+  composer = { mode: "edit", id: c.id, page: c.page, pageEnd: c.pageEnd, quote: c.quote, cat: catOf(c), text: c.comment || "",
+    suggestion: c.suggestion || "", showSug: !!c.suggestion, where: (chapterOf(pageOf(c)) || {}).title || "" };
+  openMenu = null; renderList(); focusComposer();
+}
+function focusComposer() { const t = listEl.querySelector(".composer textarea.main"); if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); autogrow(t); t.closest(".composer").scrollIntoView({ block: "nearest" }); } }
+const drafts = () => { const d = LS.get("drafts", []); const old = LS.get("draft", null); if (old) { LS.set("draft", null); if (!d.some(x => x.did === old.did)) { d.push({ did: Math.random().toString(36).slice(2), ...old }); LS.set("drafts", d); } } return d; };
+function saveDraft() { if (!(composer && composer.mode === "new" && hasContent(composer))) return; const d = drafts().filter(x => x.did !== composer.did); d.push({ ...composer }); LS.set("drafts", d); }
+function dropDraft(did) { LS.set("drafts", drafts().filter(x => x.did !== did)); }
+let draftTimer = 0;
+function composerHTML() {
+  const c = composer; const ph = CAT[c.cat].ph;
+  return `<div class="composer cat-${c.cat}" id="composer">
+    <div class="ch"><b>${c.mode === "new" ? "Новый комментарий" : "Правка комментария"}</b> · стр. ${esc(lbl(c.page))}${c.pageEnd && c.pageEnd !== c.page ? "–" + esc(lbl(c.pageEnd)) : ""} · <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.where)}</span><span class="dr" id="drs">${c.mode === "new" ? "черновик ✓" : ""}</span></div>
+    <div class="q">${esc(c.quote)}</div>
+    <div class="cats" role="radiogroup" aria-label="Тип замечания">${CATS.map((k, i) => `<button class="chip cat-${k.k} ${k.k === c.cat ? "on" : ""}" role="radio" aria-checked="${k.k === c.cat}" data-cat="${k.k}" title="Alt+${i + 1}"><i></i>${k.n}</button>`).join("")}</div>
+    <textarea class="main" placeholder="${esc(ph)}" aria-label="Текст комментария">${esc(c.text)}</textarea>
+    <button class="sugt" data-a="sug">${c.showSug ? "▾" : "▸"} Предложить замену</button>
+    ${c.showSug ? `<textarea class="sg" aria-label="Как должно быть">${esc(c.suggestion || c.quote)}</textarea><div class="diff" id="diff">${diffHTML(c.quote, c.suggestion || c.quote)}</div>` : ""}
+    <div class="row"><span class="hint" title="Esc — свернуть, черновик сохранится"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+      <button class="btn" data-a="cancel">Отмена</button><button class="btn solid" data-a="save">Сохранить</button></div></div>`;
+}
+function draftBarHTML(d) {
+  const t = d.text || d.quote || ""; return `<div class="draftbar" data-did="${esc(d.did)}"><span>Черновик: стр. ${esc(lbl(d.page))} — «${esc(t.slice(0, 40))}${t.length > 40 ? "…" : ""}»</span><button data-a="draft-open">Продолжить</button><button data-a="draft-drop">Удалить</button></div>`;
+}
+function autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 300) + "px"; }
+function closeComposer(save) {
+  if (!composer) return;
+  if (composer.mode === "edit" && !save) {
+    const was = comments.find(x => x.id === composer.id), snap = { ...composer };
+    if (was && (snap.text !== (was.comment || "") || snap.cat !== catOf(was) || (snap.suggestion || "") !== (was.suggestion || "")))
+      toast("Правка не сохранена", { action: "Вернуть", ms: 8000, onAction: () => { if (!composer) { composer = snap; renderList(); focusComposer(); } } });
+  }
+  if (composer.mode === "new" && !save && hasContent(composer)) { saveDraft(); toast("Черновик сохранён — его можно продолжить сверху списка"); }
+  else if (composer.mode === "new") dropDraft(composer.did);
+  const p = composer.page, pe = composer.pageEnd; composer = null; pending = null;
+  for (let n = p; n <= (pe || p); n++) paintPage(n);
+  renderList();
+}
+async function saveComposer() {
+  const c = composer; if (!c) return;
+  const sug = c.showSug && c.suggestion && c.suggestion.trim() !== c.quote.trim() ? c.suggestion.trim() : "";
+  if (!c.text.trim() && !sug) { toast("Напишите комментарий или предложите замену"); return; }
+  LS.set("lastCat", c.cat);
+  try {
+    if (c.mode === "new") {
+      const ch = chapterOf(c.page);
+      const it = await api("/api/comments", { body: { page: c.page, pageEnd: c.pageEnd, chapter: ch ? ch.title : "", quote: c.quote, comment: c.text.trim(), category: c.cat, suggestion: sug, ctx: c.ctx || null, anchor: c.anchor || null, anchorEnd: c.anchorEnd || null } });
+      comments.push(it); activeId = it.id; await relocate(it);
+      if (!visibleByFilter(it)) { filter = "waiting"; catFilter.clear(); onlyChapter = false; persistFilters(); }
+      dropDraft(c.did);
+      const src = it.source; toast(src ? `Сохранено · ${src.file.split("/").pop()}:${src.line}${src.lineEnd ? "–" + src.lineEnd : ""}${src.how === "synctex" ? "" : " (по словам)"}` : "Сохранено (место в исходниках не найдено)");
+    } else {
+      const it = await api("/api/comments/" + c.id, { body: { comment: c.text.trim(), category: c.cat, suggestion: sug } });
+      Object.assign(comments.find(x => x.id === c.id), it); activeId = c.id; toast("Изменено");
+    }
+  } catch (e) { toast("Не сохранилось: " + e.message, { err: true }); return; }
+  composer = null; pending = null; repaintAll(); renderList(); renderToc(); scrollCardIntoView(activeId);
+}
+listEl.addEventListener("input", e => {
+  if (e.target.matches("textarea.th")) { threadText = e.target.value; autogrow(e.target); return; }
+  if (!composer) return;
+  if (e.target.matches(".composer textarea.main")) { composer.text = e.target.value; autogrow(e.target); }
+  if (e.target.matches(".composer textarea.sg")) { composer.suggestion = e.target.value; $("#diff").innerHTML = diffHTML(composer.quote, composer.suggestion); autogrow(e.target); }
+  if (composer.mode === "new") { $("#drs").textContent = "…"; clearTimeout(draftTimer); draftTimer = setTimeout(() => { saveDraft(); const d = $("#drs"); if (d) d.textContent = "черновик ✓"; }, 400); }
+});
+
+// пословное сравнение «было → стало»
+function diffHTML(a, b) {
+  a = String(a ?? ""); b = String(b ?? "");
+  const tok = x => x.split(/(\s+|[.,;:!?«»()\[\]"—–])/).filter(Boolean);
+  const A = tok(a), B = tok(b);
+  if (A.length * B.length > 250000) return "";
+  const L = Array.from({ length: A.length + 1 }, () => new Int32Array(B.length + 1));
+  for (let i = A.length - 1; i >= 0; i--) for (let j = B.length - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const same = L[0][0], words = Math.max(A.filter(t => /\S/.test(t)).length, 1);
+  if (same / Math.max(A.length, B.length, 1) < .5 && words > 3)
+    return `<span class="lbl">было</span><del>${esc(a)}</del><span class="lbl">стало</span><ins>${esc(b)}</ins>`;
+  let i = 0, j = 0, out = "", last = "";
+  const put = (kind, t) => { if (last && last !== kind && kind !== "eq" && last !== "eq") out += " "; out += kind === "eq" ? esc(t) : `<${kind}>${esc(t)}</${kind}>`; last = kind; };
+  while (i < A.length && j < B.length) {
+    if (A[i] === B[j]) { put("eq", A[i]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) put("del", A[i++]);
+    else put("ins", B[j++]);
+  }
+  while (i < A.length) put("del", A[i++]);
+  while (j < B.length) put("ins", B[j++]);
+  return out;
+}
+
+// ---------------------------------------------------------------- список комментариев
+function counts() {
+  const k = { waiting: 0, answered: 0, done: 0, all: 0, fresh: 0 };
+  for (const c of comments) { if (deleting.has(c.id)) continue; k.all++; if (isDone(c)) k.done++; else if (isAnswered(c)) { k.answered++; if (isNew(c)) k.fresh++; } else k.waiting++; }
+  return k;
+}
+function renderFilters() {
+  const k = counts();
+  document.querySelectorAll("#seg button").forEach(b => { const f = b.dataset.f; b.classList.toggle("on", f === filter); b.setAttribute("aria-selected", f === filter); b.querySelector("b").textContent = k[f] || ""; b.classList.toggle("alert", f === "answered" && k.fresh > 0); });
+  $("#catf").innerHTML = CATS.map(c => `<button class="chip cat-${c.k} ${catFilter.has(c.k) ? "on" : ""}" data-cat="${c.k}"><i></i>${c.n === "Проверить факт" ? "Факт" : c.n}</button>`).join("") +
+    `<button class="chip dash ${onlyChapter ? "on" : ""}" data-only="1" title="Показывать только комментарии к разделу, который читаете">◎ Этот раздел</button>`;
+  $("#sidecount").textContent = k.fresh ? k.fresh : (k.waiting + k.answered || "");
+  $("#sidecount").title = k.fresh ? "новых ответов" : "открытых комментариев";
+  $("#sumline").textContent = (k.fresh ? `новых ответов: ${k.fresh} · ` : "") + `закрыто ${k.done} из ${k.all}`;
+}
+function persistFilters() { LS.set("filter", filter); LS.set("cats", [...catFilter]); LS.set("onlyChapter", onlyChapter); }
+
+function cardHTML(c) {
+  const cat = catOf(c), C = CAT[cat];
+  if (composer && composer.mode === "edit" && composer.id === c.id) return composerHTML();
+  if (isDone(c) && !expandedDone.has(c.id))
+    return `<article class="card done cat-${cat} ${c.id === activeId ? "active" : ""}" data-id="${c.id}" tabindex="0" title="Нажмите, чтобы раскрыть">
+      <span class="ck">✓</span><span class="ln">«${esc(c.quote)}» — ${esc(c.comment || c.suggestion)}</span><span class="pg">стр. ${esc(lbl(pageOf(c)))}</span></article>`;
+  const ms = msgs(c); const fresh = isNew(c);
+  const thread = ms.map((m, i) => m.who === "ai"
+    ? `<div class="msg"><span class="av">ИИ</span><div class="bub"><div class="h">Ответ${fresh && i === ms.map(x => x.who).lastIndexOf("ai") ? ` <span class="badge new">новый</span>` : ""}</div>${esc(m.text)}</div></div>`
+    : `<div class="msg me"><span class="av">Я</span><div class="bub"><div class="h">Уточнение${m.at ? " · " + esc(m.at) : ""}</div>${esc(m.text)}</div></div>`).join("");
+  let acts;
+  if (isDone(c)) acts = `<button class="btn" data-a="reopen">Вернуть в работу</button>`;
+  else if (isAnswered(c)) acts = `<button class="btn pri" data-a="accept">✓ Принять</button><button class="btn" data-a="clarify">Уточнить</button>`;
+  else acts = `<span class="wait">ждёт ответа</span>`;
+  const reply = editingThread === c.id ? `<div class="reply-box"><textarea class="th" placeholder="Что уточнить или поправить в ответе?">${esc(threadText)}</textarea>
+     <div class="acts"><button class="btn solid" data-a="send">Отправить</button><button class="btn" data-a="nosend">Отмена</button></div></div>` : "";
+  const menu = openMenu === c.id ? `<div class="menu" role="menu">
+      <button data-a="edit" role="menuitem">Изменить</button>
+      ${isDone(c) ? `<button data-a="reopen" role="menuitem">Вернуть в работу</button>` : `<button data-a="done" role="menuitem">Отметить «готово»</button>`}
+      ${c.source ? `<button data-a="copy" role="menuitem">Скопировать место в исходнике</button><div class="src">${esc(c.source.file)}:${esc(c.source.line)}</div>` : ""}
+      <button data-a="del" class="danger" role="menuitem">Удалить</button></div>` : "";
+  return `<article class="card cat-${cat} ${c.id === activeId ? "active" : ""}" data-id="${c.id}" tabindex="0">
+    <div class="meta"><span class="cat"><i></i>${C.n}</span>· стр. ${esc(lbl(pageOf(c)))}${c._stale ? ` <span class="badge stale" title="Цитата не найдена в текущей сборке — скорее всего, текст уже исправлен">текст изменён</span>` : ""}
+      <button class="go" data-a="go">${c._stale ? "к стр. " + esc(lbl(c.page)) : "Перейти"} →</button></div>
+    <div class="q" data-a="go" title="Перейти к месту в статье">${esc(c.quote)}</div>
+    ${c.comment ? `<div class="txt">${esc(c.comment)}</div>` : ""}
+    ${c.suggestion ? `<div class="sug"><span class="lbl">Предложено</span>${diffHTML(c.quote, c.suggestion)}</div>` : ""}
+    ${thread}${reply}
+    <div class="acts">${acts}<button class="btn more" data-a="menu" aria-label="Ещё" title="Ещё">⋯</button></div>${menu}</article>`;
+}
+function renderList() {
+  renderFilters();
+  let html = "";
+  for (const d of drafts()) if (!composer || d.did !== composer.did) html += draftBarHTML(d);
+  if (composer && composer.mode === "new") html += composerHTML();
+  const shown = comments.filter(visibleByFilter).sort((a, b) => pageOf(a) - pageOf(b) || (a.created < b.created ? -1 : 1));
+  let lastCh;
+  for (const c of shown) {
+    const ch = chapterOf(pageOf(c));
+    if (ch !== lastCh) { const n = shown.filter(x => chapterOf(pageOf(x)) === ch).length; html += `<div class="ghead"><span>${esc(ch ? ch.title : "Без раздела")}</span><span>${n}</span></div>`; lastCh = ch; }
+    html += cardHTML(c);
+  }
+  if (!shown.length && !(composer && composer.mode === "new")) html += emptyHTML();
+  const st = listEl.scrollTop; listEl.innerHTML = html; listEl.scrollTop = st;
+  listEl.querySelectorAll("textarea").forEach(autogrow);
+}
+function emptyHTML() {
+  const any = catFilter.size || onlyChapter;
+  if (any) return `<div class="empty"><span class="ic">◌</span>По этим фильтрам ничего нет. <button data-a="reset">Сбросить фильтры</button></div>`;
+  if (filter === "waiting") return `<div class="empty"><span class="ic">✓</span>Всё разобрано. Выделите фрагмент в статье и нажмите <kbd>C</kbd>, чтобы оставить замечание.</div>`;
+  if (filter === "answered") return `<div class="empty"><span class="ic">💬</span>Новых ответов нет. ИИ пишет ответы прямо сюда — загляните после пересборки статьи.</div>`;
+  if (filter === "done") return `<div class="empty"><span class="ic">◌</span>Пока ничего не закрыто.</div>`;
+  return `<div class="empty"><span class="ic">◌</span>Комментариев ещё нет.</div>`;
+}
+function scrollCardIntoView(id) { const el = listEl.querySelector(`.card[data-id="${id}"]`); if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+
+function activate(id, jump) {
+  const c = comments.find(x => x.id === id); if (!c) return;
+  activeId = id;
+  if (isAnswered(c) && isNew(c)) { markSeen(c); if (!comments.some(x => x !== c && isNew(x))) document.querySelectorAll('.toast[data-tag="answers"]').forEach(x => x.remove()); }
+  if (!visibleByFilter(c)) { filter = isDone(c) ? "done" : isAnswered(c) ? "answered" : "waiting"; catFilter.clear(); onlyChapter = false; persistFilters(); }
+  renderList(); repaintAll(); scrollCardIntoView(id);
+  if (jump) jumpTo(c);
+}
+function jumpTo(c) {
+  const n = pageOf(c); const st = pageState.get(n); if (!st) return;
+  goPage(n);
+  const tryMark = k => { const m = st.marks.find(x => x.id === c.id); if (m) goPage(n, m.rects[0].y); else if (k < 10) setTimeout(() => tryMark(k + 1), 150); };
+  setTimeout(() => tryMark(0), 250);
+}
+async function markSeen(c) { c.reply_seen = fp(c); try { await api("/api/comments/" + c.id, { body: { reply_seen: c.reply_seen } }); } catch (e) {} }
+
+async function setStatus(c, status, msg, noUndo) {
+  const prev = c.status; c.status = status; if (status === "done") c.reply_seen = fp(c);
+  renderList(); repaintAll(); renderToc();
+  try { await api("/api/comments/" + c.id, { body: { status, reply_seen: c.reply_seen } }); }
+  catch (e) { c.status = prev; renderList(); toast("Не получилось: " + e.message, { err: true }); return; }
+  const id = c.id;
+  if (noUndo) { toast(msg); return; }
+  toast(msg, { action: "Отменить", onAction: () => setStatus(comments.find(x => x.id === id) || c, prev, "Вернул как было", true), ms: 6000 });
+}
+function deleteComment(c) {
+  openMenu = null;
+  const t = setTimeout(async () => { deleting.delete(c.id); comments = comments.filter(x => x.id !== c.id);
+    try { await api("/api/comments/" + c.id, { method: "DELETE", keepalive: true }); } catch (e) { comments.push(c); renderList(); repaintAll(); renderToc(); toast("Не удалилось: " + e.message, { err: true }); } }, 6000);
+  deleting.set(c.id, t); renderList(); repaintAll(); renderToc();
+  toast("Комментарий удалён", { action: "Отменить", ms: 6000, onAction: () => { clearTimeout(deleting.get(c.id)); deleting.delete(c.id); renderList(); repaintAll(); renderToc(); } });
+}
+window.addEventListener("beforeunload", () => {
+  for (const [id, t] of deleting) { clearTimeout(t); fetch("/api/comments/" + id, { method: "DELETE", keepalive: true }); }
+});
+
+listEl.addEventListener("click", async e => {
+  const a = e.target.closest("[data-a]")?.dataset.a;
+  const chip = e.target.closest(".composer .chip");
+  if (chip && composer) { composer.cat = chip.dataset.cat; const t = composer.text; renderList(); composer.text = t; focusComposer(); return; }
+  if (a === "save") return saveComposer();
+  if (a === "cancel") return closeComposer(false);
+  if (a === "sug") { composer.showSug = !composer.showSug; if (composer.showSug && !composer.suggestion) composer.suggestion = composer.quote; renderList(); return; }
+  const did = e.target.closest(".draftbar")?.dataset.did;
+  if (a === "draft-open") { const d = drafts().find(x => x.did === did); if (d) { if (composer && (composer.mode === "edit" || hasContent(composer))) { toast("Сначала сохраните или отмените начатый комментарий"); return; } composer = d; pending = null; renderList(); repaintAll(); focusComposer(); goPage(d.page); } return; }
+  if (a === "draft-drop") { dropDraft(did); renderList(); return; }
+  if (a === "reset") { catFilter.clear(); onlyChapter = false; persistFilters(); renderList(); repaintAll(); return; }
+  const card = e.target.closest(".card"); if (!card) { if (openMenu) { openMenu = null; renderList(); } return; }
+  const c = comments.find(x => x.id === card.dataset.id); if (!c) return;
+  if (card.classList.contains("done") && !a) { expandedDone.add(c.id); activate(c.id, true); return; }
+  switch (a) {
+    case "go": activate(c.id, true); return;
+    case "menu": openMenu = openMenu === c.id ? null : c.id; renderList(); listEl.querySelector(".menu button")?.focus(); return;
+    case "edit": editComposer(c); return;
+    case "done": openMenu = null; setStatus(c, "done", "Отмечено «готово»"); return;
+    case "reopen": openMenu = null; expandedDone.delete(c.id); setStatus(c, "open", "Вернул в работу"); return;
+    case "accept": setStatus(c, "done", "Принято — комментарий закрыт"); return;
+    case "clarify": if (editingThread !== c.id) threadText = ""; editingThread = c.id; markSeen(c); renderList(); setTimeout(() => listEl.querySelector("textarea.th")?.focus(), 20); return;
+    case "nosend": editingThread = null; threadText = ""; renderList(); return;
+    case "send": {
+      const t = listEl.querySelector("textarea.th").value.trim(); if (!t) return;
+      try { Object.assign(c, await api(`/api/comments/${c.id}/thread`, { body: { text: t } })); } catch (er) { toast("Не отправилось: " + er.message, { err: true }); return; }
+      editingThread = null; threadText = ""; renderList(); repaintAll(); toast(filter === "answered" ? "Уточнение отправлено — карточка перешла во вкладку «Ждут»" : "Уточнение отправлено — ИИ ответит в этой же карточке"); return;
+    }
+    case "copy": { const s = `${c.source.file}:${c.source.line}`; try { await navigator.clipboard.writeText(s); toast("Скопировано: " + s); } catch (er) { toast(s); } openMenu = null; renderList(); return; }
+    case "del": deleteComment(c); return;
+  }
+  if (!e.target.closest("button, textarea, a")) activate(c.id, false);
+});
+listEl.addEventListener("keydown", e => {
+  const card = e.target.closest?.(".card");
+  if (e.target.matches("textarea.main, textarea.sg") || e.target.closest(".composer")) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveComposer(); }
+    else if (e.key === "Escape") { e.preventDefault(); closeComposer(false); }
+    else if (e.altKey && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); composer.cat = CATS[+e.code.slice(5) - 1].k; renderList(); focusComposer(); }
+    return;
+  }
+  if (e.target.matches("textarea.th")) { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); listEl.querySelector('[data-a="send"]').click(); } if (e.key === "Escape") { editingThread = null; renderList(); } return; }
+  if (card && e.target === card && e.key === "Enter") { e.preventDefault(); const c = comments.find(x => x.id === card.dataset.id); expandedDone.add(c.id); activate(c.id, true); listEl.querySelector(`.card[data-id="${c.id}"]`)?.focus({ preventScroll: true }); }
+  if (e.key === "Escape" && openMenu) { const id = openMenu; openMenu = null; renderList(); listEl.querySelector(`.card[data-id="${id}"] [data-a="menu"]`)?.focus(); }
+  if (openMenu && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); const bs = [...listEl.querySelectorAll(".menu button")]; const i = bs.indexOf(document.activeElement); bs[(i + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]?.focus(); }
+});
+
+document.querySelectorAll("#seg button").forEach(b => b.onclick = () => { filter = b.dataset.f; persistFilters(); renderList(); repaintAll(); });
+$("#catf").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.only) onlyChapter = !onlyChapter; else { const k = b.dataset.cat; catFilter.has(k) ? catFilter.delete(k) : catFilter.add(k); }
+  persistFilters(); renderList(); repaintAll();
+});
+
+// ---------------------------------------------------------------- клики и подсказки на странице
+function markAt(e) {
+  const pageEl = e.target.closest && e.target.closest(".page"); if (!pageEl) return null;
+  const st = pageState.get(+pageEl.dataset.n); if (!st || !st.marks.length) return null;
+  const b = pageEl.getBoundingClientRect(); const x = e.clientX - b.left, y = e.clientY - b.top;
+  let best = null;
+  for (const m of st.marks) if (m.rects.some(r => x >= r.x - 1 && x <= r.x + r.w + 1 && y >= r.y - 1 && y <= r.y + r.h + 1)) if (!best || m.len < best.len) best = m;
+  return best ? { m: best, pageEl } : null;
+}
+view.addEventListener("click", e => {
+  if (!window.getSelection().isCollapsed) return;
+  const hit = markAt(e); if (!hit) return;
+  const c = comments.find(x => x.id === hit.m.id); if (isDone(c)) expandedDone.add(c.id);
+  openSide(); activate(hit.m.id, false);
+});
+let tipRaf = 0;
+let tipTimer = 0;
+view.addEventListener("mousemove", e => {
+  if (tipRaf || e.buttons) return;
+  tipRaf = requestAnimationFrame(() => {
+    tipRaf = 0; const hit = markAt(e); const tip = $("#tip");
+    document.querySelectorAll(".page.over-mark").forEach(p => p.classList.remove("over-mark"));
+    if (!hit) { tip.style.display = "none"; tip.dataset.id = ""; clearTimeout(tipTimer); return; }
+    hit.pageEl.classList.add("over-mark");
+    const c = comments.find(x => x.id === hit.m.id); const t = c.comment || c.suggestion || "";
+    if (tip.dataset.id === c.id && tip.style.display === "block") return;
+    tip.dataset.id = c.id; tip.style.display = "none"; clearTimeout(tipTimer);
+    const r = hit.m.rects[0], pb = hit.pageEl.getBoundingClientRect();
+    tipTimer = setTimeout(() => {
+      tip.innerHTML = `<b>${CAT[catOf(c)].n}${isAnswered(c) ? " · есть ответ" : ""}</b><br>${esc(t.length > 90 ? t.slice(0, 90) + "…" : t)}`;
+      tip.style.display = "block"; tip.style.left = Math.min(e.clientX - 20, innerWidth - 270) + "px"; tip.style.top = Math.max(56, pb.top + r.y - tip.offsetHeight - 8) + "px";
+    }, 400);
+  });
+});
+view.addEventListener("mouseleave", () => { $("#tip").style.display = "none"; });
+
+// ---------------------------------------------------------------- поиск
+let sTimer = 0, sHits = [], sCur = -1, sQuery = "";
+$("#q").addEventListener("input", e => { clearTimeout(sTimer); sTimer = setTimeout(() => runSearch(e.target.value), 300); });
+$("#q").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); if (sHits.length) { showHit((sCur + (e.shiftKey ? -1 : 1) + sHits.length) % sHits.length); $("#sres").hidden = true; } }
+  if (e.key === "Escape") { $("#sres").hidden = true; e.target.blur(); view.focus({ preventScroll: true }); }
+});
+$("#q").addEventListener("focus", () => { if (sHits.length) $("#sres").hidden = false; });
+async function runSearch(q) {
+  q = q.trim(); sQuery = q; const box = $("#sres");
+  $("#scount").textContent = "/";
+  if (q.length < 3) { box.hidden = true; sHits = []; return; }
+  const nq = q.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " "); box.hidden = false; sHits = []; sCur = -1;
+  for (let n = 1; n <= pdf.numPages; n++) {
+    if (sQuery !== q) return;
+    if (n % 25 === 1) box.innerHTML = `<div class="st">Ищу… стр. ${n} из ${pdf.numPages}</div>`;
+    const t = await pageText(n); const flat = t.raw.replace(/-\n/g, "").replace(/\s+/g, " "); const low = flat.toLowerCase().replace(/ё/g, "е");
+    let i = low.indexOf(nq);
+    let occ = 0;
+    while (i >= 0 && sHits.length < 200) { sHits.push({ n, occ: occ++, text: flat.slice(i, i + q.length), snip: flat.slice(Math.max(0, i - 40), i + q.length + 50), at: Math.min(40, i) }); i = low.indexOf(nq, i + nq.length); }
+  }
+  box.innerHTML = `<div class="st">${sHits.length ? `Найдено: ${sHits.length}${sHits.length >= 200 ? "+" : ""} · Enter — следующее` : "Ничего не найдено"}</div>` +
+    sHits.slice(0, 80).map((h, i) => `<a data-i="${i}"><b>стр. ${esc(lbl(h.n))}</b>${esc(h.snip.slice(0, h.at))}<mark>${esc(h.snip.slice(h.at, h.at + h.text.length))}</mark>${esc(h.snip.slice(h.at + h.text.length))}</a>`).join("");
+}
+$("#sres").addEventListener("mousedown", e => { const a = e.target.closest("a"); if (a) { e.preventDefault(); showHit(+a.dataset.i); $("#sres").hidden = true; view.focus({ preventScroll: true }); } });
+function showHit(i) {
+  sCur = i; const h = sHits[i]; $("#scount").textContent = `${i + 1}/${sHits.length}`; document.querySelectorAll("#sres a").forEach(a => a.classList.toggle("cur", +a.dataset.i === i));
+  goPage(h.n);
+  const flash = k => {
+    const st = pageState.get(h.n); if (!st.textDivs) { if (k < 20) setTimeout(() => flash(k + 1), 150); return; }
+    const nq = normStr(h.text), all = findAll(pageIndex(st).norm, nq); if (!all.length) return;
+    const at = all[Math.min(h.occ || 0, all.length - 1)], sp = [at, at + nq.length];
+    const rs = rectsFor(h.n, sp[0], sp[1]); const layer = st.el.querySelector(".hlLayer");
+    for (const r of rs) layer.insertAdjacentHTML("beforeend", `<div class="hl-search" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"></div>`);
+    if (rs[0]) goPage(h.n, rs[0].y);
+    setTimeout(() => layer.querySelectorAll(".hl-search").forEach(x => x.remove()), 3200);
+  };
+  setTimeout(() => flash(0), 200);
+}
+
+// ---------------------------------------------------------------- масштаб, панели, сборка
+async function rezoom(f, toFit) {
+  const pos = savePos(); fit = !!toFit; LS.set("fit", fit);
+  if (!toFit) scale = Math.min(3.5, Math.max(.6, scale * f));
+  await layoutPages(); restorePos(pos); repaintAll();
+}
+$("#zin").onclick = () => rezoom(1.15); $("#zout").onclick = () => rezoom(1 / 1.15); $("#zfit").onclick = () => rezoom(1, true);
+let rzT = 0; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => { if (fit && pdf) rezoom(1, true); }, 250); });
+function toggleToc() { if (innerWidth < 1200) document.body.classList.toggle("toc-open"); else { document.body.classList.toggle("toc-closed"); LS.set("toc", !document.body.classList.contains("toc-closed")); afterPanel(); } }
+function toggleSide() { if (innerWidth < 900) document.body.classList.toggle("side-open"); else { document.body.classList.toggle("side-closed"); LS.set("side", !document.body.classList.contains("side-closed")); afterPanel(); } }
+function openSide() { if (innerWidth < 900) document.body.classList.add("side-open"); else if (document.body.classList.contains("side-closed")) { document.body.classList.remove("side-closed"); LS.set("side", true); afterPanel(); } }
+function afterPanel() { if (fit && pdf) setTimeout(() => rezoom(1, true), 200); }
+$("#tocbtn").onclick = toggleToc; $("#sidebtn").onclick = toggleSide;
+if (LS.get("toc", true) === false) document.body.classList.add("toc-closed");
+if (LS.get("side", true) === false) document.body.classList.add("side-closed");
+
+// ---------------------------------------------------------------- тема
+const THEMES = ["auto", "light", "dark"], THEME_NAMES = { auto: "как в системе", light: "светлая", dark: "тёмная" };
+let theme = LS.get("theme", "auto"), invertPages = LS.get("invert", false);
+const darkMq = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const dark = theme === "dark" || (theme === "auto" && darkMq.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.body.classList.toggle("invert", dark && invertPages);
+  $("#themebtn").title = `Тема: ${THEME_NAMES[theme]} (D) · страницы: ${dark && invertPages ? "тёмные" : "светлые"} (I)`;
+}
+darkMq.addEventListener("change", applyTheme); applyTheme();
+function cycleTheme() { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; LS.set("theme", theme); applyTheme(); toast("Тема: " + THEME_NAMES[theme]); }
+function toggleInvert() { invertPages = !invertPages; LS.set("invert", invertPages); applyTheme();
+  toast(document.documentElement.dataset.theme === "dark" ? (invertPages ? "Тёмные страницы" : "Светлые страницы") : "Тёмные страницы — только в тёмной теме (D)"); }
+$("#themebtn").onclick = cycleTheme;
+
+function setOffline(v) {
+  if (v === offline) return; offline = v; const b = $("#build");
+  if (v) { b.classList.add("off"); b.textContent = "⚠ нет связи с читалкой"; b.title = "Сервер не отвечает. Запустите ./читалка.sh"; }
+  else { b.classList.remove("off"); setBuild(!!newMtime, newMtime || pdfMtime); }
+}
+function setBuild(isNew, mtime) {
+  const b = $("#build"); const t = new Date((mtime || pdfMtime) * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  b.classList.toggle("new", isNew);
+  b.textContent = isNew ? `● Статья пересобрана · ${t} · обновить` : `сборка ${t}`;
+  b.title = isNew ? "Загрузить новую сборку (R)" : "Последняя сборка статьи";
+}
+let newMtime = 0;
+async function reloadBook() {
+  if (!newMtime) return;
+  const wasStale = new Set(comments.filter(c => c._stale).map(c => c.id));
+  newMtime = 0; await openPdf(true);
+  for (const c of comments) await relocate(c);
+  const nowStale = comments.filter(c => c._stale && !wasStale.has(c.id) && !isDone(c));
+  repaintAll(); renderList(); renderToc();
+  toast(nowStale.length ? `Статья обновлена. ${nowStale.length} ${plural(nowStale.length, "комментарий больше не находится", "комментария больше не находятся", "комментариев больше не находятся")} в тексте — похоже, уже исправлено` : "Статья обновлена",
+    nowStale.length ? { action: "Показать", onAction: () => activate(nowStale[0].id, true), ms: 9000 } : {});
+}
+$("#build").onclick = reloadBook;
+function plural(n, a, b, c) { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; }
+
+// ---------------------------------------------------------------- уведомления
+function toast(text, o = {}) {
+  if (o.tag) document.querySelectorAll(`.toast[data-tag="${o.tag}"]`).forEach(x => x.remove());
+  const el = document.createElement("div"); if (o.tag) el.dataset.tag = o.tag; el.className = "toast" + (o.err ? " err" : "");
+  el.innerHTML = `<span>${esc(text)}</span>${o.action ? `<button class="act">${esc(o.action)}</button>` : ""}<button class="x" aria-label="Закрыть">✕</button>`;
+  const close = () => el.remove();
+  el.querySelector(".x").onclick = close;
+  if (o.action) el.querySelector(".act").onclick = () => { close(); o.onAction(); };
+  const box = $("#toasts"); while (box.children.length > 2) box.firstChild.remove(); box.appendChild(el);
+  if (!o.err) setTimeout(close, o.ms || 3200);
+}
+
+// ---------------------------------------------------------------- клавиатура
+document.addEventListener("keydown", e => {
+  if ($("#help").style.display === "flex") { if (e.key === "Escape" || e.key === "?") $("#help").style.display = "none"; return; }
+  if (e.altKey && e.key === "ArrowLeft" && !isTyping()) { e.preventDefault(); goBack(); return; }
+  if (isTyping() || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.code;
+  const onBtn = document.activeElement && /^(BUTTON|A)$/.test(document.activeElement.tagName) && !selbar.contains(document.activeElement);
+  if (selbar.classList.contains("show") && pending) {
+    if (k === "KeyC" || (e.key === "Enter" && !onBtn)) { e.preventDefault(); startComposer(LS.get("lastCat", "rewrite")); return; }
+    if (/^Digit[1-5]$/.test(k)) { e.preventDefault(); startComposer(CATS[+k.slice(5) - 1].k); return; }
+    if (e.key === "Escape") { window.getSelection().removeAllRanges(); hideSelbar(); return; }
+  }
+  if (e.key === "Escape") { if (composer) closeComposer(false); document.body.classList.remove("toc-open", "side-open"); $("#sres").hidden = true; return; }
+  if (e.key === "?" || (k === "Slash" && e.shiftKey)) { $("#help").style.display = "flex"; return; }
+  if (e.key === "/" || k === "Slash") { e.preventDefault(); $("#q").focus(); return; }
+  if (k === "KeyG") { e.preventDefault(); $("#pg").focus(); return; }
+  if (k === "BracketLeft") return toggleToc();
+  if (k === "BracketRight") return toggleSide();
+  if (k === "KeyR" && newMtime) return reloadBook();
+  if (k === "KeyW") return rezoom(1, true);
+  if (k === "KeyD") return cycleTheme();
+  if (k === "KeyI") return toggleInvert();
+  if (e.key === "Backspace" && navStack.length) { e.preventDefault(); return goBack(); }
+  if (e.key === "+" || e.key === "=" || k === "NumpadAdd") return rezoom(1.15);
+  if (e.key === "-" || k === "NumpadSubtract" || k === "Minus") return rezoom(1 / 1.15);
+  if (k === "KeyJ" || k === "KeyK") {
+    const shown = comments.filter(visibleByFilter).sort((a, b) => pageOf(a) - pageOf(b));
+    if (!shown.length) return;
+    let i = shown.findIndex(c => c.id === activeId);
+    if (i >= 0) i = (i + (k === "KeyJ" ? 1 : -1) + shown.length) % shown.length;
+    else if (k === "KeyJ") { i = shown.findIndex(c => pageOf(c) >= curPage); if (i < 0) i = 0; }
+    else { i = -1; shown.forEach((c, j) => { if (pageOf(c) <= curPage) i = j; }); if (i < 0) i = shown.length - 1; }
+    activate(shown[i].id, true);
+  }
+});
+$("#help").addEventListener("click", e => { if (e.target.id === "help") $("#help").style.display = "none"; });
+$("#helpbtn").onclick = () => $("#help").style.display = "flex";
+document.addEventListener("mousedown", e => {
+  if (!e.target.closest("#toc") && !e.target.closest("#tocbtn")) document.body.classList.remove("toc-open");
+  if (!e.target.closest(".search")) $("#sres").hidden = true;
+});
+
+// ---------------------------------------------------------------- экспорт
+$("#export").onclick = () => {
+  const open = comments.filter(c => !isDone(c)).sort((a, b) => pageOf(a) - pageOf(b));
+  let md = `# Комментарии к статье — ${new Date().toLocaleDateString("ru-RU")}\n`, last;
+  for (const c of open) {
+    const ch = chapterOf(pageOf(c)); if (ch !== last) { md += `\n## ${ch ? ch.title : "Без раздела"}\n`; last = ch; }
+    md += `\n- **${CAT[catOf(c)].n}**, стр. ${lbl(pageOf(c))}: «${c.quote}»\n  ${c.comment || ""}${c.suggestion ? `\n  Предложено: ${c.suggestion}` : ""}${msgs(c).map(m => `\n  ${m.who === "ai" ? "ИИ" : "Я"}: ${m.text}`).join("")}\n`;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+  a.download = "kommentarii.md"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// ---------------------------------------------------------------- загрузка и фоновое обновление
+async function loadComments(first) {
+  let fresh;
+  try { fresh = await api("/api/comments"); } catch (e) { setOffline(true); return; }
+  setOffline(false);
+  const str = v => v == null ? "" : String(v);
+  fresh = fresh.filter(c => c && typeof c === "object" && c.id);
+  for (const c of fresh) { c.quote = str(c.quote); c.comment = str(c.comment); c.suggestion = str(c.suggestion); c.reply = str(c.reply);
+    c.thread = Array.isArray(c.thread) ? c.thread.filter(m => m && typeof m === "object").map(m => ({ ...m, text: str(m.text) })) : []; }
+  const before = new Map(comments.map(c => [c.id, c]));
+  const newAnswers = [];
+  for (const c of fresh) {
+    const old = before.get(c.id); if (old) { c._page = old._page; c._stale = old._stale; c._cross = old._cross; }
+    if (!first && isNew(c) && (!old || fp(old) !== fp(c))) newAnswers.push(c);
+  }
+  comments = fresh;
+  for (const c of comments) if (c._page === undefined) await relocate(c);
+  const busy = composer || editingThread || openMenu || (listEl.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA");
+  if (first) { const k = counts(); filter = k.fresh ? "answered" : LS.get("filter", "waiting"); }
+  if (busy) renderFilters(); else renderList();
+  repaintAll(); renderToc();
+  if (newAnswers.length) toast(`ИИ ответил на ${newAnswers.length} ${plural(newAnswers.length, "комментарий", "комментария", "комментариев")}`, { tag: "answers", action: "Показать", onAction: () => { filter = "answered"; persistFilters(); activate(newAnswers[0].id, true); }, ms: 8000 });
+}
+setInterval(() => loadComments(false), 15000);
+setInterval(async () => { try { const i = await api("/api/pdfinfo"); if (i.mtime && pdfMtime && i.mtime !== pdfMtime) { newMtime = i.mtime; setBuild(true, i.mtime); } } catch (e) {} }, 5000);
+
+(async () => {
+  await openPdf(false);
+  if (!pdf) return;
+  await loadComments(true);
+  const n = drafts().length; if (n) toast(n === 1 ? "Есть незаконченный черновик — он сверху списка комментариев" : `Незаконченных черновиков: ${n} — они сверху списка комментариев`);
+  view.focus({ preventScroll: true });
+})().catch(e => { pagesEl.innerHTML = `<div class="state">Не удалось открыть статью: ${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

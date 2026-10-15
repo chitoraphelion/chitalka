@@ -1,0 +1,20 @@
+[project]
+name = "chitalka"
+version = "0.1.0"
+description = "PDF reader for LaTeX papers: highlight, comment, and let an AI agent fix the sources"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+chitalka = "chitalka.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["chitalka"]
+
+[tool.setuptools.package-data]
+chitalka = ["static/*.html", "static/vendor/*.js", "agent_doc.md"]
