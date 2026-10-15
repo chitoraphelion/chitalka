@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import sys
 import threading
 import urllib.request
@@ -135,6 +136,10 @@ def cmd_open(argv):
           f"  Комментарии: {store_file}\n  Памятка агентам: {doc}\nОстановить: Ctrl+C", flush=True)
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    def stop_on_signal(signum, frame):                 # закрыли терминал или kill: тоже гасим latexmk
+        raise KeyboardInterrupt
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, stop_on_signal)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
