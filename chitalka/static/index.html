@@ -281,7 +281,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
   <div id="crumb"></div>
   <div class="pagejump">стр. <input id="pg" aria-label="Номер страницы" title="Перейти на страницу (G)"><span class="of" id="pgof"></span></div>
   <div class="search"><input id="q" placeholder="Найти в статье" aria-label="Поиск по статье"><kbd id="scount">/</kbd><div id="sres" hidden></div></div>
-  <div class="zoom"><button id="zout" title="Мельче (Ctrl+−)" aria-label="Мельче">−</button><span id="zval">100%</span><button id="zin" title="Крупнее (Ctrl+=)" aria-label="Крупнее">+</button><button id="zfit" class="fit" title="По ширине (Ctrl+0, W)">↔ По ширине</button></div>
+  <div class="zoom"><button id="zout" title="Мельче (Ctrl/Cmd+−)" aria-label="Мельче">−</button><span id="zval">100%</span><button id="zin" title="Крупнее (Ctrl/Cmd+=)" aria-label="Крупнее">+</button><button id="zfit" class="fit" title="По ширине (Ctrl/Cmd+0, W)">↔ По ширине</button></div>
   <button id="build" title="Перезагрузить статью (R)"></button>
   <button class="hbtn" id="sidebtn" title="Комментарии ( ] )" aria-label="Комментарии">💬<span class="n" id="sidecount"></span></button>
   <button class="hbtn" id="headbtn" title="Скрыть шапку (H), режим чтения (F)" aria-label="Скрыть шапку">▴</button>
@@ -318,7 +318,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
     <tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>следующий / предыдущий комментарий</td></tr>
     <tr><td><kbd>/</kbd></td><td>поиск по статье (Enter — следующее совпадение)</td></tr>
     <tr><td><kbd>G</kbd></td><td>перейти на страницу</td></tr>
-    <tr><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>−</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>крупнее / мельче / по ширине</td></tr>
+    <tr><td><kbd>Ctrl</kbd> или <kbd>Cmd</kbd> + <kbd>=</kbd> / <kbd>−</kbd> / <kbd>0</kbd></td><td>крупнее / мельче / по ширине</td></tr>
     <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>W</kbd></td><td>то же без Ctrl</td></tr>
     <tr><td><kbd>[</kbd> <kbd>]</kbd> <kbd>H</kbd></td><td>скрыть или показать оглавление, комментарии, шапку</td></tr>
     <tr><td><kbd>F</kbd></td><td>режим чтения: скрыть всё и вернуть как было</td></tr>
@@ -1425,8 +1425,8 @@ function toast(text, o = {}) {
 document.addEventListener("keydown", e => {
   if ($("#help").style.display === "flex") { if (e.key === "Escape" || e.key === "?") $("#help").style.display = "none"; return; }
   if (e.altKey && e.key === "ArrowLeft" && !isTyping()) { e.preventDefault(); goBack(); return; }
-  // Ctrl+= / Ctrl+− / Ctrl+0 — масштаб статьи (по коду клавиши: работает в любой раскладке)
-  if (e.ctrlKey && !e.metaKey && !e.altKey) {
+  // Ctrl/Cmd + = / − / 0 — масштаб статьи, а не браузера (по коду клавиши: в любой раскладке)
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
     if (e.code === "Equal" || e.code === "NumpadAdd") { e.preventDefault(); rezoom(1.15); return; }
     if (e.code === "Minus" || e.code === "NumpadSubtract") { e.preventDefault(); rezoom(1 / 1.15); return; }
     if (e.code === "Digit0" || e.code === "Numpad0") { e.preventDefault(); rezoom(1, true); return; }
