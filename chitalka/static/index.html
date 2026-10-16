@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Читалка</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/vendor/katex.min.css">
 <style>
 :root {
   --teal:#1F5F6B; --teal-d:#174A54; --teal-l:#E6F0F1;
@@ -272,6 +273,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
   .pagejump span.of, #build { display:none; }
 }
 </style>
+<link rel="stylesheet" href="/markdown.css">
 </head>
 <body>
 <header>
@@ -332,6 +334,9 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 </div></div>
 
 <script src="/vendor/pdf.min.js"></script>
+<script src="/vendor/markdown-it.min.js"></script>
+<script src="/vendor/katex.min.js"></script>
+<script src="/markdown.js"></script>
 <script>
 "use strict";
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
@@ -346,11 +351,20 @@ const CATS = [
 ];
 const CAT = Object.fromEntries(CATS.map(c => [c.k, c]));
 const PT = 96 / 72;
+let documentMode = "pdf", markdownData = null, markdownSections = [];
+const unit = () => documentMode === "markdown" ? "разд." : "стр.";
+function resourceURL(path) {
+  const url = new URL(path, location.origin);
+  const document = new URLSearchParams(location.search).get("document");
+  if (document !== null) url.searchParams.set("document", document);
+  return url.pathname + url.search;
+}
 
 // ---------------------------------------------------------------- состояние
+const storagePrefix = "kom." + (new URLSearchParams(location.search).get("document") ? encodeURIComponent(new URLSearchParams(location.search).get("document")) + "." : "");
 const LS = {
-  get(k, d) { try { const v = localStorage.getItem("kom." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem("kom." + k, JSON.stringify(v)); } catch (e) {} },
+  get(k, d) { try { const v = localStorage.getItem(storagePrefix + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(storagePrefix + k, JSON.stringify(v)); } catch (e) {} },
 };
 let pdf = null, pdfMtime = 0, labels = null, outline = [], chapters = [];
 let scale = 1.4, fit = LS.get("fit", true);
@@ -371,7 +385,7 @@ async function api(path, opts) {
   const o = { method: "GET" };
   if (opts) { o.method = opts.method || "POST"; o.headers = { "Content-Type": "application/json" };
     if (opts.body) o.body = JSON.stringify(opts.body); if (opts.keepalive) o.keepalive = true; }
-  const r = await fetch(path, o);
+  const r = await fetch(resourceURL(path), o);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return r.json();
 }
@@ -406,6 +420,10 @@ function normChars(str) {     // [[символ, начало, конец], ...]
 const normStr = s => normChars(s).map(x => x[0]).join("");
 
 async function pageText(n) {
+  if (documentMode === "markdown") {
+    const st = pageState.get(n), ix = pageIndex(st);
+    return { raw: ix.raw, norm: ix.norm, body: ix.norm };
+  }
   if (textCache.has(n)) return textCache.get(n);
   const page = await pdf.getPage(n); const tc = await page.getTextContent(); const H = page.getViewport({ scale: 1 }).height;
   const raw = tc.items.map(i => i.str + (i.hasEOL ? "\n" : "")).join("");
@@ -445,6 +463,7 @@ async function relocate(c) {
   if (!q || !c.page) return;
   const cands = [c.page, c.pageEnd, c.page - 1, c.page + 1, c.page - 2, c.page + 2, c.page - 3, c.page + 3, c.page + 4, c.page - 4]
     .filter((p, i, a) => p >= 1 && p <= pdf.numPages && a.indexOf(p) === i);
+  if (documentMode === "markdown") for (let n = 1; n <= pdf.numPages; n++) if (!cands.includes(n)) cands.push(n);
   for (const p of cands) { const t = await pageText(p); if (findIn(t.norm, q, c.ctx)) { c._page = p; return; } }
   for (const p of cands) {                         // цитата через разрыв страницы
     if (p >= pdf.numPages) continue;
@@ -454,7 +473,7 @@ async function relocate(c) {
   }
   // книгу не пересобирали после комментария — текст не мог измениться
   const made = c.created ? Date.parse(c.created.replace(" ", "T")) : 0;
-  if (made && made >= pdfMtime * 1000 - 60000) return;
+  if (documentMode !== "markdown" && made && made >= pdfMtime * 1000 - 60000) return;
   c._stale = true;
 }
 
@@ -463,10 +482,11 @@ async function openPdf(keep) {
   const pos = keep ? savePos() : LS.get("pos", null);
   let info;
   try { info = await api("/api/pdfinfo"); } catch (e) { info = { mtime: 0 }; }
+  if (info.kind === "markdown") return openMarkdown(keep);
   if (!info.mtime) { pagesEl.innerHTML = `<div class="state"><span style="font-size:32px">📕</span><br>PDF ещё не собран (ищу <code>main.pdf</code> и <code>build/main.pdf</code>). Соберите статью, лучше с <code>latexmk -synctex=1</code> — читалка подхватит PDF сама.</div>`;
     setTimeout(() => openPdf(keep), 5000); return; }
   pdfMtime = info.mtime; textCache.clear();
-  pdf = await pdfjsLib.getDocument({ url: "/book.pdf?t=" + pdfMtime }).promise;
+  pdf = await pdfjsLib.getDocument({ url: resourceURL("/book.pdf?t=" + pdfMtime) }).promise;
   labels = await pdf.getPageLabels();
   try { const meta = await pdf.getMetadata(); const t = (meta.info && meta.info.Title || "").trim() || (await api("/api/info")).title;
     if (t) { $("#title").textContent = t; document.title = t + " — читалка"; } } catch (e) {}
@@ -477,6 +497,58 @@ async function openPdf(keep) {
   if (pos) restorePos(pos);
   onScroll();
 }
+
+async function openMarkdown(keep) {
+  const pos = keep ? savePos() : LS.get("pos", null);
+  const data = await api("/api/markdown");
+  const sections = ChitalkaMarkdown.render(data.text, data.document);
+  markdownData = data; markdownSections = sections; documentMode = "markdown";
+  document.body.classList.add("markdown");
+  pdfMtime = data.mtime; textCache.clear(); labels = null;
+  pdf = { numPages: sections.length };
+  $("#title").textContent = data.name; document.title = data.name + " — читалка";
+  $(".pagejump").firstChild.textContent = "разд. ";
+  $("#pg").setAttribute("aria-label", "Номер раздела");
+  $("#pg").title = "Перейти на раздел (G)";
+  $("#pgof").textContent = "из " + sections.length;
+  outline = sections.map((section, i) => ({ title: section.title, level: section.level, page: i + 1, chapter: true, end: i + 1 }));
+  chapters = outline.slice();
+  if (!keep && fit) scale = PT;
+  await layoutMarkdown();
+  if (pos) restorePos(pos);
+  if (!keep && location.hash) followMarkdownAnchor(location.hash);
+  curPage = Math.min(curPage, pdf.numPages);
+  setBuild(false); renderToc(); onScroll();
+}
+
+async function layoutMarkdown() {
+  pagesEl.innerHTML = ""; pageState.clear();
+  for (let i = 0; i < markdownSections.length; i++) {
+    const el = document.createElement("article"), n = i + 1;
+    el.className = "page markdown-page"; el.dataset.n = n; el.id = "p" + n;
+    el.innerHTML = `<div class="md-content">${markdownSections[i].html}</div><div class="hlLayer"></div><div class="selLayer"></div>`;
+    el.querySelector(".md-content").style.fontSize = (17 * scale / PT) + "px";
+    for (const image of el.querySelectorAll("img")) image.addEventListener("load", () => repaintAll());
+    pagesEl.appendChild(el);
+    pageState.set(n, { el, rendered: true, textDivs: [], idx: null, marks: [] });
+  }
+  $("#zval").textContent = Math.round(scale / PT * 100) + "%";
+  $("#zfit").classList.toggle("on", fit);
+  if (document.fonts) await document.fonts.ready;
+}
+
+function followMarkdownAnchor(hash) {
+  let id; try { id = decodeURIComponent(hash.slice(1)); } catch (_) { return; }
+  const target = pagesEl.querySelector("#" + CSS.escape(id));
+  if (target) view.scrollTo({ top: view.scrollTop + target.getBoundingClientRect().top - view.getBoundingClientRect().top - 20, behavior: "smooth" });
+}
+pagesEl.addEventListener("click", e => {
+  if (documentMode !== "markdown") return;
+  const link = e.target.closest("a");
+  if (link && link.getAttribute("href")?.startsWith("#")) {
+    e.preventDefault(); pushNav(); followMarkdownAnchor(link.getAttribute("href"));
+  }
+});
 
 async function buildOutline() {
   outline = [];
@@ -515,6 +587,7 @@ function computeScale(page1) {
 }
 
 async function layoutPages() {
+  if (documentMode === "markdown") return layoutMarkdown();
   pagesEl.innerHTML = ""; pageState.clear();
   const p1 = await pdf.getPage(1); const vp1 = computeScale(p1);
   const w = Math.floor(vp1.width * scale), h = Math.floor(vp1.height * scale);
@@ -629,12 +702,17 @@ view.addEventListener("scroll", () => { if (peekOn) hidePeek(); }, { passive: tr
 // индекс страницы: нормализованный текст и откуда каждый символ взят
 function pageIndex(st) {
   if (st.idx) return st.idx;
+  if (documentMode === "markdown") return (st.idx = ChitalkaMarkdown.index(st.el.querySelector(".md-content"), normChars));
   let norm = ""; const own = [];
   st.textDivs.forEach((d, di) => { for (const [x, a, b] of normChars(d.textContent)) { norm += x; own.push([di, a, b]); } });
   return (st.idx = { norm, own });
 }
 function rectsFor(n, from, to) {           // прямоугольники для символов [from, to) в координатах страницы
   const st = pageState.get(n); const ix = pageIndex(st);
+  if (documentMode === "markdown") {
+    const range = ChitalkaMarkdown.rangeFor(ix, from, to);
+    return range ? clientToPage(st.el, range.getClientRects()) : [];
+  }
   if (from >= to || !ix.own[from]) return [];
   const [d1, a1] = ix.own[from], [d2, , b2] = ix.own[to - 1];
   const n1 = st.textDivs[d1].firstChild, n2 = st.textDivs[d2].firstChild; if (!n1 || !n2) return [];
@@ -646,7 +724,7 @@ function clientToPage(el, list) {
   for (const q of list) {
     if (q.width < .5 || q.height < .5) continue;
     const x = q.left - base.left, y = q.top - base.top;
-    if (q.height > 50 * scale) continue;               // целые блоки, а не строки
+    if (documentMode !== "markdown" && q.height > 50 * scale) continue;
     const key = [x, y, q.width, q.height].map(Math.round).join(",");
     if (seen.has(key)) continue; seen.add(key);
     out.push({ x, y, w: q.width, h: q.height });
@@ -684,6 +762,7 @@ document.addEventListener("selectionchange", () => { if (!selRaf) selRaf = reque
 function clearLiveSelection() { for (const n of selDrawn) { const l = pageState.get(n)?.el.querySelector(".selLayer"); if (l) l.innerHTML = ""; } selDrawn.clear(); }
 function drawLiveSelection() {
   clearLiveSelection();
+  if (documentMode === "markdown") return; // native selection for normal HTML text
   const sel = window.getSelection(); if (!sel.rangeCount || sel.isCollapsed) return;
   const r = sel.getRangeAt(0), host = r.commonAncestorContainer;
   const hostEl = host.nodeType === 1 ? host : host.parentElement; if (!hostEl || !(hostEl.closest(".page") || hostEl.contains(pagesEl) || pagesEl.contains(hostEl))) return;
@@ -806,7 +885,7 @@ function renderToc() {
     if (o.chapter) inCur = o === curCh;
     if (o.sec && !inCur) return;
     if (!o.part && !o.chapter && !o.sec) return;
-    const cls = o.part ? "part" : o.sec ? "sec" : "";
+    const cls = o.part ? "part" : o.sec || (documentMode === "markdown" && o.level > 0) ? "sec" : "";
     const n = o.chapter && counts.get(o) ? `<span class="pill" title="открытых комментариев">${counts.get(o)}</span>` : "";
     html += `<a class="${cls}" data-o="${i}" data-p="${o.page || ""}" tabindex="0"><span class="t">${esc(o.title)}</span>${n}</a>`;
   });
@@ -830,6 +909,7 @@ document.addEventListener("keyup", e => { if (e.shiftKey && !isTyping()) onSelec
 // курсор отпустили не над текстом (поле, зазор между страницами): конец выделения
 // ставим в ближайшее место текста по положению курсора
 function fixOvershoot(e) {
+  if (documentMode === "markdown") return;
   const sel = window.getSelection(); if (!sel.rangeCount || sel.isCollapsed) return;
   const inText = n => { const el = n && (n.nodeType === 1 ? n : n.parentElement); return el && el.closest(".textLayer span"); };
   if (!inText(sel.anchorNode)) return;
@@ -903,6 +983,14 @@ function onSelection(e) {
   const sel = window.getSelection();
   if (!sel.rangeCount || sel.isCollapsed) { hideSelbar(); return; }
   const r0 = sel.getRangeAt(0);
+  if (documentMode === "markdown") {
+    if (!pagesEl.contains(r0.startContainer) || !pagesEl.contains(r0.endContainer)) return;
+    const chosen = ChitalkaMarkdown.selection(snapToWords(sel), pageState, normChars);
+    if (!chosen || chosen.quote.replace(/\s/g, "").length < 2) { hideSelbar(); return; }
+    pending = { ...chosen, documentRevision: markdownData.revision, y0: view.scrollTop };
+    for (const n of Object.keys(chosen.spans)) paintPage(+n);
+    showSelbar(); return;
+  }
   const pg = node => { const el = node.nodeType === 1 ? node : node.parentElement; return el && el.closest(".page"); };
   const a = pg(r0.startContainer), b = pg(r0.endContainer);
   if (!a || !b) return;
@@ -979,6 +1067,7 @@ function startComposer(cat) {
 }
 // начало и конец выделения в пунктах PDF от левого верхнего угла (так считает SyncTeX)
 function anchorsOf(p) {
+  if (documentMode === "markdown") return { sourceLine: p.sourceLine, sourceLineEnd: p.sourceLineEnd, documentRevision: p.documentRevision };
   const at = (n, first) => { const sp = p.spans[n]; const rs = sp ? rectsFor(n, sp[0], sp[1]) : []; const r = first ? rs[0] : rs[rs.length - 1]; if (!r) return null;
     return { page: n, x: +((first ? r.x + 3 : r.x + r.w - 3) / scale).toFixed(2), y: +((r.y + r.h * .65) / scale).toFixed(2) }; };
   return { anchor: at(p.page, true), anchorEnd: at(p.pageEnd, false) };
@@ -996,7 +1085,7 @@ let draftTimer = 0;
 function composerHTML() {
   const c = composer; const ph = CAT[c.cat].ph;
   return `<div class="composer cat-${c.cat}" id="composer">
-    <div class="ch"><b>${c.mode === "new" ? "Новый комментарий" : "Правка комментария"}</b> · стр. ${esc(lbl(c.page))}${c.pageEnd && c.pageEnd !== c.page ? "–" + esc(lbl(c.pageEnd)) : ""} · <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.where)}</span><span class="dr" id="drs">${c.mode === "new" ? "черновик ✓" : ""}</span></div>
+    <div class="ch"><b>${c.mode === "new" ? "Новый комментарий" : "Правка комментария"}</b> · ${unit()} ${esc(lbl(c.page))}${c.pageEnd && c.pageEnd !== c.page ? "–" + esc(lbl(c.pageEnd)) : ""} · <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.where)}</span><span class="dr" id="drs">${c.mode === "new" ? "черновик ✓" : ""}</span></div>
     <div class="q">${esc(c.quote)}</div>
     <div class="cats" role="radiogroup" aria-label="Тип замечания">${CATS.map((k, i) => `<button class="chip cat-${k.k} ${k.k === c.cat ? "on" : ""}" role="radio" aria-checked="${k.k === c.cat}" data-cat="${k.k}" title="Alt+${i + 1}"><i></i>${k.n}</button>`).join("")}</div>
     <textarea class="main" placeholder="${esc(ph)}" aria-label="Текст комментария">${esc(c.text)}</textarea>
@@ -1006,7 +1095,7 @@ function composerHTML() {
       <button class="btn" data-a="cancel">Отмена</button><button class="btn solid" data-a="save">Сохранить</button></div></div>`;
 }
 function draftBarHTML(d) {
-  const t = d.text || d.quote || ""; return `<div class="draftbar" data-did="${esc(d.did)}"><span>Черновик: стр. ${esc(lbl(d.page))} — «${esc(t.slice(0, 40))}${t.length > 40 ? "…" : ""}»</span><button data-a="draft-open">Продолжить</button><button data-a="draft-drop">Удалить</button></div>`;
+  const t = d.text || d.quote || ""; return `<div class="draftbar" data-did="${esc(d.did)}"><span>Черновик: ${unit()} ${esc(lbl(d.page))} — «${esc(t.slice(0, 40))}${t.length > 40 ? "…" : ""}»</span><button data-a="draft-open">Продолжить</button><button data-a="draft-drop">Удалить</button></div>`;
 }
 function autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 300) + "px"; }
 function closeComposer(save) {
@@ -1030,11 +1119,12 @@ async function saveComposer() {
   try {
     if (c.mode === "new") {
       const ch = chapterOf(c.page);
-      const it = await api("/api/comments", { body: { page: c.page, pageEnd: c.pageEnd, chapter: ch ? ch.title : "", quote: c.quote, comment: c.text.trim(), category: c.cat, suggestion: sug, ctx: c.ctx || null, anchor: c.anchor || null, anchorEnd: c.anchorEnd || null } });
+      const it = await api("/api/comments", { body: { page: c.page, pageEnd: c.pageEnd, chapter: ch ? ch.title : "", quote: c.quote, comment: c.text.trim(), category: c.cat, suggestion: sug, ctx: c.ctx || null, anchor: c.anchor || null, anchorEnd: c.anchorEnd || null,
+        sourceLine: c.sourceLine, sourceLineEnd: c.sourceLineEnd, documentRevision: c.documentRevision } });
       comments.push(it); activeId = it.id; await relocate(it);
       if (!visibleByFilter(it)) { filter = "waiting"; catFilter.clear(); onlyChapter = false; persistFilters(); }
       dropDraft(c.did);
-      const src = it.source; toast(src ? `Сохранено · ${src.file.split("/").pop()}:${src.line}${src.lineEnd ? "–" + src.lineEnd : ""}${src.how === "synctex" ? "" : " (по словам)"}` : "Сохранено (место в исходниках не найдено)");
+      const src = it.source; toast(src ? `Сохранено · ${src.file.split("/").pop()}:${src.line}${src.lineEnd ? "–" + src.lineEnd : ""}${src.how === "words" ? " (по словам)" : ""}` : "Сохранено (место в исходниках не найдено)");
     } else {
       const it = await api("/api/comments/" + c.id, { body: { comment: c.text.trim(), category: c.cat, suggestion: sug } });
       Object.assign(comments.find(x => x.id === c.id), it); activeId = c.id; toast("Изменено");
@@ -1101,7 +1191,7 @@ function cardHTML(c) {
   if (composer && composer.mode === "edit" && composer.id === c.id) return composerHTML();
   if (isDone(c) && !expandedDone.has(c.id))
     return `<article class="card done cat-${cat} ${c.id === activeId ? "active" : ""}" data-id="${c.id}" tabindex="0" title="Нажмите, чтобы раскрыть">
-      <span class="ck">✓</span><span class="ln">«${esc(c.quote)}» — ${esc(c.comment || c.suggestion)}</span><span class="pg">стр. ${esc(lbl(pageOf(c)))}</span></article>`;
+      <span class="ck">✓</span><span class="ln">«${esc(c.quote)}» — ${esc(c.comment || c.suggestion)}</span><span class="pg">${unit()} ${esc(lbl(pageOf(c)))}</span></article>`;
   const ms = msgs(c); const fresh = isNew(c);
   const thread = ms.map((m, i) => m.who === "ai"
     ? `<div class="msg"><span class="av">ИИ</span><div class="bub"><div class="h">Ответ${fresh && i === ms.map(x => x.who).lastIndexOf("ai") ? ` <span class="badge new">новый</span>` : ""}</div>${esc(m.text)}</div></div>`
@@ -1118,9 +1208,9 @@ function cardHTML(c) {
       ${c.source ? `<button data-a="nvim" role="menuitem">Открыть в nvim · <kbd>E</kbd></button><button data-a="copy" role="menuitem">Скопировать место в исходнике</button><div class="src">${esc(c.source.file)}:${esc(c.source.line)}</div>` : ""}
       <button data-a="del" class="danger" role="menuitem">Удалить</button></div>` : "";
   return `<article class="card cat-${cat} ${c.id === activeId ? "active" : ""}" data-id="${c.id}" tabindex="0">
-    <div class="meta"><span class="cat"><i></i>${C.n}</span>· стр. ${esc(lbl(pageOf(c)))}${c._stale ? ` <span class="badge stale" title="Цитата не найдена в текущей сборке — скорее всего, текст уже исправлен">текст изменён</span>` : ""}
+    <div class="meta"><span class="cat"><i></i>${C.n}</span>· ${unit()} ${esc(lbl(pageOf(c)))}${c._stale ? ` <span class="badge stale" title="Цитата не найдена в текущей сборке — скорее всего, текст уже исправлен">текст изменён</span>` : ""}
       ${c.source ? `<button class="srcbtn" data-a="nvim" title="Открыть в nvim (E)${c.source.how === "words" ? " · место найдено по словам, может быть неточным" : ""}">✎ ${esc(srcLabel(c.source))}</button>` : ""}
-      <button class="go" data-a="go">${c._stale ? "к стр. " + esc(lbl(c.page)) : "Перейти"} →</button></div>
+      <button class="go" data-a="go">${c._stale ? "к " + unit() + " " + esc(lbl(c.page)) : "Перейти"} →</button></div>
     <div class="q" data-a="go" title="Перейти к месту в статье">${esc(c.quote)}</div>
     ${c.comment ? `<div class="txt">${esc(c.comment)}</div>` : ""}
     ${c.suggestion ? `<div class="sug"><span class="lbl">Предложено</span>${diffHTML(c.quote, c.suggestion)}</div>` : ""}
@@ -1295,14 +1385,14 @@ async function runSearch(q) {
   const nq = q.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " "); box.hidden = false; sHits = []; sCur = -1;
   for (let n = 1; n <= pdf.numPages; n++) {
     if (sQuery !== q) return;
-    if (n % 25 === 1) box.innerHTML = `<div class="st">Ищу… стр. ${n} из ${pdf.numPages}</div>`;
+    if (n % 25 === 1) box.innerHTML = `<div class="st">Ищу… ${unit()} ${n} из ${pdf.numPages}</div>`;
     const t = await pageText(n); const flat = t.raw.replace(/-\n/g, "").replace(/\s+/g, " "); const low = flat.toLowerCase().replace(/ё/g, "е");
     let i = low.indexOf(nq);
     let occ = 0;
     while (i >= 0 && sHits.length < 200) { sHits.push({ n, occ: occ++, text: flat.slice(i, i + q.length), snip: flat.slice(Math.max(0, i - 40), i + q.length + 50), at: Math.min(40, i) }); i = low.indexOf(nq, i + nq.length); }
   }
   box.innerHTML = `<div class="st">${sHits.length ? `Найдено: ${sHits.length}${sHits.length >= 200 ? "+" : ""} · Enter — следующее` : "Ничего не найдено"}</div>` +
-    sHits.slice(0, 80).map((h, i) => `<a data-i="${i}"><b>стр. ${esc(lbl(h.n))}</b>${esc(h.snip.slice(0, h.at))}<mark>${esc(h.snip.slice(h.at, h.at + h.text.length))}</mark>${esc(h.snip.slice(h.at + h.text.length))}</a>`).join("");
+    sHits.slice(0, 80).map((h, i) => `<a data-i="${i}"><b>${unit()} ${esc(lbl(h.n))}</b>${esc(h.snip.slice(0, h.at))}<mark>${esc(h.snip.slice(h.at, h.at + h.text.length))}</mark>${esc(h.snip.slice(h.at + h.text.length))}</a>`).join("");
 }
 $("#sres").addEventListener("mousedown", e => { const a = e.target.closest("a"); if (a) { e.preventDefault(); showHit(+a.dataset.i); $("#sres").hidden = true; view.focus({ preventScroll: true }); } });
 function showHit(i) {
@@ -1324,6 +1414,12 @@ function showHit(i) {
 async function rezoom(f, toFit) {
   const pos = savePos(); fit = !!toFit; LS.set("fit", fit);
   if (!toFit) scale = Math.min(3.5, Math.max(.6, scale * f));
+  if (documentMode === "markdown") {
+    if (toFit) scale = PT;
+    for (const st of pageState.values()) st.el.querySelector(".md-content").style.fontSize = (17 * scale / PT) + "px";
+    $("#zval").textContent = Math.round(scale / PT * 100) + "%"; $("#zfit").classList.toggle("on", fit);
+    restorePos(pos); repaintAll(); return;
+  }
   await layoutPages(); restorePos(pos); repaintAll();
 }
 $("#zin").onclick = () => rezoom(1.15); $("#zout").onclick = () => rezoom(1 / 1.15); $("#zfit").onclick = () => rezoom(1, true);
@@ -1384,6 +1480,11 @@ let watchMode = false, buildInfo = null;
 function setBuild(isNew, mtime) {
   const b = $("#build"); const t = new Date((mtime || pdfMtime) * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   b.classList.remove("busy", "err"); b.classList.toggle("new", isNew);
+  if (documentMode === "markdown") {
+    b.textContent = isNew ? "● Markdown изменён · обновить" : "◉ Markdown · автообновление";
+    b.title = isNew ? "Загрузить новую версию (R)" : "Изменения исходника подхватываются автоматически";
+    return;
+  }
   const st = buildInfo && buildInfo.state;
   if (st === "building" || st === "starting") { b.classList.add("busy"); b.textContent = "⟳ собирается…"; b.title = "latexmk -pvc пересобирает статью"; return; }
   if (st === "error") { const e = buildInfo.errors[0]; b.classList.add("err");
@@ -1478,7 +1579,7 @@ $("#export").onclick = () => {
   let md = `# Комментарии к статье — ${new Date().toLocaleDateString("ru-RU")}\n`, last;
   for (const c of open) {
     const ch = chapterOf(pageOf(c)); if (ch !== last) { md += `\n## ${ch ? ch.title : "Без раздела"}\n`; last = ch; }
-    md += `\n- **${CAT[catOf(c)].n}**, стр. ${lbl(pageOf(c))}: «${c.quote}»\n  ${c.comment || ""}${c.suggestion ? `\n  Предложено: ${c.suggestion}` : ""}${msgs(c).map(m => `\n  ${m.who === "ai" ? "ИИ" : "Я"}: ${m.text}`).join("")}\n`;
+    md += `\n- **${CAT[catOf(c)].n}**, ${unit()} ${lbl(pageOf(c))}: «${c.quote}»\n  ${c.comment || ""}${c.suggestion ? `\n  Предложено: ${c.suggestion}` : ""}${msgs(c).map(m => `\n  ${m.who === "ai" ? "ИИ" : "Я"}: ${m.text}`).join("")}\n`;
   }
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
   a.download = "kommentarii.md"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -1520,12 +1621,13 @@ async function pollPdf() {
   if (i.mtime && pdfMtime && i.mtime !== pdfMtime) {
     newMtime = i.mtime;
     const stable = i.mtime === seenMtime; seenMtime = i.mtime;
-    const busy = st === "building" || st === "starting" || pending || !window.getSelection().isCollapsed;
+    const busy = st === "building" || st === "starting" || pending || !window.getSelection().isCollapsed ||
+      (documentMode === "markdown" && (composer || editingThread));
     if (watchMode && stable && !busy) { setBuild(false); return reloadBook(); }
   }
   setBuild(!!newMtime, newMtime || pdfMtime);
 }
-(async () => { try { watchMode = !!(await api("/api/info")).watch; } catch (e) {} setInterval(pollPdf, watchMode ? 1500 : 5000); pollPdf(); })();
+(async () => { try { const info = await api("/api/info"); watchMode = info.kind === "markdown" || !!info.watch; } catch (e) {} setInterval(pollPdf, watchMode ? 1500 : 5000); pollPdf(); })();
 
 (async () => {
   await openPdf(false);

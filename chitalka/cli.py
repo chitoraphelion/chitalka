@@ -23,11 +23,13 @@ import urllib.request
 import webbrowser
 from importlib import resources
 from pathlib import Path
+from urllib.parse import urlencode
 
 from . import __version__
 from .build import Builder
 from .server import Config, serve
 from .store import DOC_NAME, Store, messages, now, store_path, waiting
+from .documents import DOCUMENT_SUFFIXES, is_markdown
 
 DEFAULT_PORT = 8765
 COMMANDS = {"list", "show", "reply", "done", "reopen", "init", "where"}
@@ -79,15 +81,15 @@ def probe(port: int):
 
 
 def cmd_open(argv):
-    p = argparse.ArgumentParser(prog="chitalka", description="Читалка PDF-статьи с комментариями.",
+    p = argparse.ArgumentParser(prog="chitalka", description="Читалка PDF и Markdown с формулами и комментариями.",
                                 epilog="Комментарии: list|show|reply|done|reopen|init|where. Сессии: sessions|ps|stop. Автодополнение: completion zsh|bash --install")
-    p.add_argument("pdf", nargs="?", help="PDF (по умолчанию ./main.pdf, затем ./build/main.pdf)")
+    p.add_argument("pdf", nargs="?", metavar="DOCUMENT", help="PDF или .md/.markdown; по умолчанию main.pdf, build/main.pdf, main.md или README.md")
     p.add_argument("-p", "--port", type=int, default=DEFAULT_PORT)
-    p.add_argument("--root", help="корень проекта с main.tex (по умолчанию текущая папка)")
+    p.add_argument("--root", help="корень проекта с документами и комментариями (по умолчанию текущая папка)")
     p.add_argument("--font", help="шрифт интерфейса (по умолчанию font_family из kitty.conf)")
     p.add_argument("--no-browser", action="store_true", help="не открывать браузер")
     p.add_argument("-w", "--watch", action="store_true",
-                   help="запустить latexmk -pvc -synctex=1 и подхватывать новые сборки автоматически")
+                   help="следить за изменениями; для PDF также запустить latexmk -pvc -synctex=1")
     p.add_argument("--engine", choices=["pdflatex", "xelatex", "lualatex"],
                    help="движок для --watch (по умолчанию .latexmkrc или подсказка в main.tex)")
     p.add_argument("--editor", help="команда редактора с {file} {line} {root} "
@@ -99,17 +101,34 @@ def cmd_open(argv):
     pdf = Path(args.pdf).expanduser().resolve() if args.pdf else None
     if pdf and not pdf.exists():
         p.error(f"нет файла {pdf}")
+    if pdf and (not pdf.is_file() or pdf.suffix.lower() not in DOCUMENT_SUFFIXES):
+        p.error("нужен файл PDF, .md или .markdown")
+    if is_markdown(pdf) and not args.root:
+        if Path(args.pdf).expanduser().is_absolute() or not pdf.is_relative_to(root):
+            root = pdf.parent
+    if is_markdown(pdf) and not pdf.is_relative_to(root):
+        p.error("Markdown должен находиться внутри --root проекта")
     store_file = store_path(root)
     doc = write_doc(store_file)
     cfg = Config(root=root, pdf=pdf, store=Store(store_file), font=font_stack(args.font or kitty_font()),
                  title=root.name, editor=args.editor)
 
     server = None
+    markdown = cfg.kind == "markdown"
+    if markdown:
+        cfg.pdf = cfg.document_path()  # keep a default Markdown selected during atomic editor saves
     for port in range(args.port, args.port + 20):
         info = probe(port)
         if info:
-            if info.get("root") == str(root):
+            compatible = info.get("root") == str(root) and (not markdown or info.get("markdown"))
+            if args.watch and not markdown and not info.get("watch"):
+                compatible = False
+            same = info.get("document") == cfg.document
+            queryable = bool(cfg.document and not Path(cfg.document).is_absolute() and info.get("markdown"))
+            if compatible and (same or queryable or not cfg.document):
                 url = f"http://127.0.0.1:{port}/"
+                if cfg.document and not same:
+                    url += "?" + urlencode({"document": cfg.document})
                 print(f"Читалка этого проекта уже работает: {url}")
                 if not args.no_browser:
                     webbrowser.open(url)
@@ -124,15 +143,15 @@ def cmd_open(argv):
         sys.exit(f"Нет свободного порта в {args.port}–{args.port + 19}")
 
     url = f"http://127.0.0.1:{server.server_port}/"
-    if args.watch:
+    if args.watch and not markdown:
         if not (root / "main.tex").exists():
             sys.exit(f"--watch: нет {root / 'main.tex'}")
         outdir = "build" if (pdf and pdf.parent == root / "build") or (not pdf and (root / "build").is_dir()
                                                                      and not (root / "main.pdf").exists()) else None
         cfg.builder = Builder(root, store_file.parent / "latexmk.log", args.engine, outdir).start()
         print(f"Сборка: {' '.join(cfg.builder.cmd)}\n  лог: {cfg.builder.log}", flush=True)
-    found = cfg.pdf_path()
-    print(f"Читалка: {url}\n  PDF: {found or 'ещё не собран (main.pdf или build/main.pdf)'}\n"
+    found = cfg.document_path()
+    print(f"Читалка: {url}\n  {'Markdown' if markdown else 'PDF'}: {found or 'ещё не собран (main.pdf или build/main.pdf)'}\n"
           f"  Комментарии: {store_file}\n  Памятка агентам: {doc}\nОстановить: Ctrl+C", flush=True)
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
@@ -142,7 +161,9 @@ def cmd_open(argv):
         signal.signal(sig, stop_on_signal)
     from .processes import tracked
     try:
-        with tracked("chitalka", "reader", root, {"url": url, "watch": args.watch, "pdf": str(found) if found else None}):
+        with tracked("chitalka", "reader", root, {"url": url, "watch": args.watch, "kind": cfg.kind,
+                                                "document": str(found) if found else None,
+                                                "pdf": str(found) if found and not markdown else None}):
             server.serve_forever()
     except KeyboardInterrupt:
         print("\nГотово.")
@@ -162,8 +183,9 @@ def short(text: str | None, n: int = 300) -> str:
 def fmt(c: dict) -> str:
     src = c.get("source") or {}
     where = f"{src['file']}:{src['line']}" + (f"-{src['lineEnd']}" if src.get("lineEnd") else "") \
-        + f" ({src.get('how', 'words')})" if src.get("file") else "место в .tex не найдено"
-    out = [f"[{c['id']}] {c.get('status', 'open')} · {c.get('category', 'rewrite')} · стр. {c.get('page')}"
+        + f" ({src.get('how', 'words')})" if src.get("file") else "место в исходнике не найдено"
+    unit = "разд." if is_markdown(c.get("document")) else "стр."
+    out = [f"[{c['id']}] {c.get('status', 'open')} · {c.get('category', 'rewrite')} · {unit} {c.get('page')}"
            f" · {where}",
            f"  цитата: {short(c.get('quote'))}"]
     if c.get("comment"):
@@ -204,7 +226,7 @@ def cmd_agent(cmd, argv):
 
     if cmd == "where":
         cfg = Config(root=root, pdf=None, store=store, font="")
-        print(f"проект: {root}\nPDF: {cfg.pdf_path()}\nкомментарии: {store_file}\nпамятка: {store_file.parent / DOC_NAME}")
+        print(f"проект: {root}\nдокумент: {cfg.document_path()}\nкомментарии: {store_file}\nпамятка: {store_file.parent / DOC_NAME}")
         return 0
     if cmd == "init":
         store_file.parent.mkdir(parents=True, exist_ok=True)

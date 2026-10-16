@@ -92,6 +92,7 @@ def new_comment(data: dict, source) -> dict:
         "ctx": data.get("ctx") if isinstance(data.get("ctx"), dict) else None,
         "anchor": data.get("anchor") if isinstance(data.get("anchor"), dict) else None,
         "source": source,
+        "document": data.get("document"),
         "reply": "",
         "thread": [],
     }

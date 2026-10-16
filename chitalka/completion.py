@@ -54,7 +54,7 @@ def complete(words):
         if dest == "root":
             return paths(prefix, directories=True)
         if not chain and dest == "pdf":
-            return list(COMMANDS) + [p for p in paths(prefix) if p.endswith(("/", ".pdf"))]
+            return list(COMMANDS) + [p for p in paths(prefix) if p.lower().endswith(("/", ".pdf", ".md", ".markdown"))]
         if chain[:1] == ["stop"] and dest == "pid":
             try:
                 from .sessions import list_sessions
