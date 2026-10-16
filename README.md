@@ -36,6 +36,42 @@ chitalka reopen ID
 chitalka init | where
 ```
 
+#### Запущенные читалки и остановка
+
+```sh
+chitalka sessions                  # или chitalka ps; из любой папки
+chitalka sessions --json
+chitalka sessions --root ~/paper
+chitalka stop                      # читалка текущего проекта
+chitalka stop 12345                # PID из списка
+chitalka stop --root ~/paper
+chitalka stop --all                # все читалки текущего пользователя
+chitalka stop --all --force        # SIGKILL оставшихся после SIGTERM и ожидания
+```
+
+Процессы проверяются через `ps`; новые запуски дополнительно регистрируются в
+`~/.local/state/chitalka/sessions/` (либо `$XDG_STATE_HOME/chitalka/sessions/`).
+Старые запуски тоже обнаруживаются. Перед сигналом сверяются владелец, время запуска
+и команда; устаревшая запись PID не служит основанием для остановки другого процесса.
+Вместе с reader завершаются его дочерние процессы, включая latexmk и TeX.
+Если после аварии остался зарегистрированный latexmk, он показывается отдельной строкой.
+PDF, исходники и комментарии сохраняются. Без доступа к `ps` остановка отказывается работать.
+
+#### Tab-автодополнение
+
+```sh
+chitalka completion zsh --install
+# или: chitalka completion bash --install
+```
+
+В новом терминале Tab дополняет команды, флаги, PDF/папки, движки сборки,
+ID комментариев и PID запущенных сессий. Установка идемпотентна и сохраняет
+остальной конфиг оболочки. В текущем zsh:
+
+```sh
+source ~/.local/share/chitalka/completion/chitalka.zsh
+```
+
 Команды и читалка пишут один файл под блокировкой, правки не теряются.
 
 #### Возможности

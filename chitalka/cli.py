@@ -80,7 +80,7 @@ def probe(port: int):
 
 def cmd_open(argv):
     p = argparse.ArgumentParser(prog="chitalka", description="Читалка PDF-статьи с комментариями.",
-                                epilog="Команды для агентов: chitalka list|show|reply|done|reopen|init|where --help")
+                                epilog="Комментарии: list|show|reply|done|reopen|init|where. Сессии: sessions|ps|stop. Автодополнение: completion zsh|bash --install")
     p.add_argument("pdf", nargs="?", help="PDF (по умолчанию ./main.pdf, затем ./build/main.pdf)")
     p.add_argument("-p", "--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--root", help="корень проекта с main.tex (по умолчанию текущая папка)")
@@ -140,13 +140,16 @@ def cmd_open(argv):
         raise KeyboardInterrupt
     for sig in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, stop_on_signal)
+    from .processes import tracked
     try:
-        server.serve_forever()
+        with tracked("chitalka", "reader", root, {"url": url, "watch": args.watch, "pdf": str(found) if found else None}):
+            server.serve_forever()
     except KeyboardInterrupt:
         print("\nГотово.")
     finally:
         if cfg.builder:
             cfg.builder.stop()
+        server.server_close()
     return 0
 
 
@@ -248,6 +251,20 @@ def cmd_agent(cmd, argv):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["_complete"]:
+        from .completion import complete
+        print("\n".join(complete(argv[1:])))
+        return 0
+    if argv[:1] == ["completion"]:
+        from .completion import command
+        return command(argv[1:])
+    if argv and argv[0] in ("sessions", "ps", "stop"):
+        from .sessions import command
+        try:
+            return command(argv[0], argv[1:])
+        except (ValueError, RuntimeError, OSError) as e:
+            print(f"chitalka: {e}", file=sys.stderr)
+            return 1
     if argv and argv[0] in COMMANDS:
         return cmd_agent(argv[0], argv[1:])
     return cmd_open(argv)

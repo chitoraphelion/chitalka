@@ -7,6 +7,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from .processes import register, unregister
 
 ERR_LINE = re.compile(r"^(?P<file>[^\s:][^:]*\.(?:tex|sty|cls|bib)):(?P<line>\d+): (?P<msg>.+)$")
 RUN_START = re.compile(r"^(Latexmk: applying rule|Run number \d+ of rule|Rule '[^']+': )")
@@ -40,11 +41,13 @@ class Builder:
         self.state, self.errors, self.changed = "starting", [], time.time()
         self.tail = deque(maxlen=60)
         self._failed, self.proc = False, None
+        self._record = None
 
     def start(self):
         self.log.parent.mkdir(parents=True, exist_ok=True)
         self.proc = subprocess.Popen(self.cmd, cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      stdin=subprocess.DEVNULL, text=True, errors="replace", start_new_session=True)
+        self._record = register("chitalka", "latexmk", self.root, pid=self.proc.pid)
         threading.Thread(target=self._read, daemon=True).start()
         return self
 
@@ -74,6 +77,7 @@ class Builder:
                 if WATCHING.match(line):
                     self._set("error" if self._failed else "ok")
         self._set("stopped")
+        unregister(self._record)
 
     def info(self) -> dict:
         return {"state": self.state, "errors": self.errors, "since": self.changed,
@@ -84,5 +88,12 @@ class Builder:
             try:
                 os.killpg(self.proc.pid, signal.SIGTERM)
                 self.proc.wait(timeout=5)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                    self.proc.wait(timeout=2)
+                except ProcessLookupError:
+                    pass
+            except ProcessLookupError:
                 pass
+        unregister(self._record)
