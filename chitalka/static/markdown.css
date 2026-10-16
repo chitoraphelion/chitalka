@@ -25,7 +25,9 @@ body.markdown #pages { min-width:0; }
 .md-content .katex-mathml { user-select:none; }
 .md-content .katex-error { white-space:pre-wrap; }
 .md-content ::selection { background:var(--sel); }
+.md-content .md-outside { color:var(--muted); text-decoration:line-through dotted; cursor:not-allowed; }
 .md-empty { color:var(--muted); font-style:italic; }
 body.invert .markdown-page { background:#191c20; color:#e2e5e8; --ink:#e2e5e8; --ink-2:#c2c7cc; --line:#343a40; --line-2:#262a2f; }
 body.markdown .hlLayer { mix-blend-mode:normal; }
+.markdown-page .hlLayer, .markdown-page .selLayer { overflow:hidden; }
 @media (max-width:900px) { .markdown-page { padding:24px; } body.markdown #pages { padding:16px 12px 40vh; } }

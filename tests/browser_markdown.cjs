@@ -1,7 +1,7 @@
 // Optional end-to-end test: see README for Playwright setup. No model calls.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-const assert = require('node:assert/strict'), { spawn } = require('node:child_process');
+const assert = require('node:assert/strict'), { spawn, execFileSync } = require('node:child_process');
 const repo = path.resolve(__dirname, '..'), python = process.env.PYTHON || 'python3';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chitalka-markdown-test-'));
 fs.writeFileSync(path.join(root, 'paper.md'), fs.readFileSync(path.join(repo, 'examples/optimization.md')));
@@ -35,6 +35,9 @@ const page=await context.newPage(), errors=[],failed=[];
 page.on('pageerror',e=>{errors.push(String(e));console.log('PAGEERROR',String(e))});page.on('response',r=>{if(r.status()>=400&&!r.url().endsWith('/favicon.ico'))failed.push(r.url()+':'+r.status())});
 await page.goto(cfg.url);await page.waitForSelector('.md-content .katex');await page.waitForFunction(()=>pageState.size===3);
 assert.equal(await page.locator('.katex-error').count(),0);
+// Opening is read-only: no agent folder, memo or notes sidecar before the first save.
+assert.ok(!fs.existsSync(path.join(root,'kommentarii')),'open must not create kommentarii/');
+assert.ok(!fs.existsSync(path.join(root,'paper.md.notes.json')),'open must not create a notes sidecar');
 assert.equal(await page.locator('table.md-content').count(),0);
 await page.screenshot({path:path.join(os.tmpdir(), 'chitalka-markdown-light.png')});
 const pending=await page.evaluate(()=>{
@@ -46,13 +49,35 @@ await page.waitForSelector('#selbar.show');await page.keyboard.press('c');await 
 await page.waitForFunction(()=>comments.length===1&&!composer);
 const comment=await page.evaluate(()=>comments[0]);assert.equal(comment.source.file,'paper.md');assert.equal(comment.source.line,7);
 assert.ok(await page.locator('#p2 .mark').count()>0,'comment highlight');
+assert.ok(fs.existsSync(path.join(root,'kommentarii/HOW_TO_USE_CHITALKA.md')),'memo appears with the first agent comment');
+// Personal note (N): own sidecar, own tab and highlight, never an agent task.
+await page.evaluate(()=>{const p=document.querySelector('#p1 .md-content p'),r=document.createRange();r.selectNodeContents(p);const s=window.getSelection();s.removeAllRanges();s.addRange(r);onSelection();});
+await page.waitForSelector('#selbar.show .notebtn');await page.keyboard.press('n');
+await page.waitForSelector('.note-editor textarea');assert.equal(await page.evaluate(()=>sideTab),'notes');
+await page.locator('.note-editor textarea').fill('Моя мысль, не для агента');await page.keyboard.press('Control+Enter');
+await page.waitForFunction(()=>notes.length===1&&!noteEditor);
+const sidecar=JSON.parse(fs.readFileSync(path.join(root,'paper.md.notes.json'),'utf8'));
+assert.equal(sidecar.notes[0].text,'Моя мысль, не для агента');assert.ok(sidecar.notes[0].quote.length>2);
+assert.ok(await page.locator('.mark.note').count()>0,'note highlight');assert.ok(await page.locator('.note-card').count()===1);
+assert.equal(await page.evaluate(()=>comments.length),1);
+const agentView=execFileSync(python,['-m','chitalka','list','--all','--json','--root',root],{cwd:repo}).toString();
+assert.ok(!agentView.includes('не для агента'),'notes never reach chitalka list');
+assert.ok(!fs.readFileSync(path.join(root,'kommentarii/kommentarii.json'),'utf8').includes('не для агента'));
+await page.locator('.note-card [data-na=edit]').click();await page.locator('.note-editor textarea').fill('Исправленная мысль');await page.keyboard.press('Control+Enter');
+await page.waitForFunction(()=>notes[0].text==='Исправленная мысль'&&!noteEditor);
+// N without a selection: a note to the current place, no quote.
+await page.evaluate(()=>{window.getSelection().removeAllRanges();view.focus();});await page.keyboard.press('n');
+await page.locator('.note-editor textarea').fill('Без выделения');await page.keyboard.press('Control+Enter');
+await page.waitForFunction(()=>notes.length===2&&!noteEditor);
+assert.equal(JSON.parse(fs.readFileSync(path.join(root,'paper.md.notes.json'),'utf8')).notes.length,2);
+await page.locator('#sidetabs [data-t=comments]').click();assert.equal(await page.locator('.note-card').count(),0);
 // Formula-only selection keeps the full TeX expression and the source block range.
 const math=await page.evaluate(()=>{
  const m=document.querySelector('#p2 .md-display'),r=document.createRange();r.selectNodeContents(m.querySelector('.katex-html'));const s=window.getSelection();s.removeAllRanges();s.addRange(r);onSelection();const result={...pending};hideSelbar();s.removeAllRanges();return result;
 });
 assert.equal(math.sourceLine,9);assert.equal(math.sourceLineEnd,14);assert.ok(math.quote.includes('\\begin{aligned}'));
 // CLI reply is visible in the same sidebar.
-const {execFileSync}=require('node:child_process');execFileSync(python,['-m','chitalka','reply',comment.id,'Условия уточнены','--root',cfg.root],{cwd:repo});
+execFileSync(python,['-m','chitalka','reply',comment.id,'Условия уточнены','--root',cfg.root],{cwd:repo});
 await page.evaluate(()=>loadComments(false));await page.locator('[data-f=answered]').click();assert.ok((await page.locator('#list').innerText()).includes('Условия уточнены'));
 await page.locator('#q').fill('гладкую');await page.waitForFunction(()=>sHits.length>0);assert.ok(await page.locator('#sres a').count()>0);
 await page.locator('#q').fill('');await page.keyboard.press('Escape');await page.locator('#zin').click();assert.equal(await page.locator('#zval').innerText(),'115%');await page.locator('#zfit').click();

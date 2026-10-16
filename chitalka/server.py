@@ -1,4 +1,5 @@
 """HTTP-сервер читалки: отдаёт PDF/Markdown, ресурсы и API комментариев (только 127.0.0.1)."""
+import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
@@ -10,7 +11,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from .editor import open_in_editor
 from .locate import locate
-from .store import CATEGORIES, STATUSES, Store, new_comment, now
+from . import notes as personal
+from .store import CATEGORIES, STATUSES, Store, new_comment, now, write_doc, write_error
 from .documents import DOCUMENT_SUFFIXES, IMAGE_TYPES, document_id, is_markdown, markdown_snapshot, markdown_source, safe_path
 
 STATIC = resources.files("chitalka") / "static"
@@ -116,6 +118,8 @@ def make_handler(cfg: Config):
             if path == "/":
                 html = (STATIC / "index.html").read_text(encoding="utf-8")
                 html = html.replace("/*CHITALKA_FONT*/", f"--font:{cfg.font};")
+                project = hashlib.sha256(str(cfg.root).encode()).hexdigest()[:12]
+                html = html.replace("/*CHITALKA_PROJECT*/", project)
                 return self.send(200, html, TYPES[".html"])
             if path in ("/markdown.js", "/markdown.css"):
                 f = STATIC / path[1:]
@@ -148,7 +152,8 @@ def make_handler(cfg: Config):
                 p = current.pdf_path()
                 return self.send(200, {"root": str(cfg.root), "title": cfg.title, "watch": bool(cfg.builder),
                                        "store": str(cfg.store.path), "pdf": str(p) if p else None,
-                                       "kind": current.kind, "document": current.document, "markdown": True})
+                                       "kind": current.kind, "document": current.document, "markdown": True,
+                                       "notes": True})
             if path == "/api/markdown":
                 p = current.document_path()
                 if not p or not is_markdown(p):
@@ -164,6 +169,35 @@ def make_handler(cfg: Config):
                                        "build": cfg.builder.info() if cfg.builder and current.kind == "pdf" else None})
             if path == "/api/comments":
                 return self.send(200, [c for c in cfg.store.read() if self.belongs(c, current)])
+            if path == "/api/notes":
+                doc = current.document_path()
+                if not doc:
+                    return self.send(404, {"error": "Документ не найден"})
+                sidecar = personal.notes_path(doc)
+                try:
+                    items = personal.read(sidecar)
+                except personal.NotesError as e:
+                    return self.send(200, {"notes": [], "path": str(sidecar), "error": str(e)})
+                return self.send(200, {"notes": items, "path": str(sidecar)})
+            return self.send(404, {"error": "не найдено"})
+
+        def notes_call(self, current, path, data=None, method="POST"):
+            """Личные заметки: отдельный sidecar, не агентское хранилище."""
+            doc = current.document_path()
+            if not doc:
+                return self.send(404, {"error": "Документ не найден"})
+            sidecar, name = personal.notes_path(doc), Path(doc).name
+            m = re.match(r"/api/notes(?:/(n\w+))?$", path)
+            try:
+                if method == "DELETE" and m and m.group(1):
+                    personal.delete(sidecar, name, m.group(1))
+                    return self.send(200, {"ok": True})
+                if method == "POST" and m and m.group(1):
+                    return self.send(200, personal.update(sidecar, name, m.group(1), data))
+                if method == "POST" and m:
+                    return self.send(200, personal.add(sidecar, name, data))
+            except personal.NotesError as e:
+                return self.send(e.status, {"error": str(e)})
             return self.send(404, {"error": "не найдено"})
 
         # ------------------------------------------------------------ POST
@@ -193,6 +227,9 @@ def make_handler(cfg: Config):
                     return self.send(400, {"error": str(e)})
                 return self.send(200, {"ok": True, "how": how})
 
+            if path == "/api/notes" or path.startswith("/api/notes/"):
+                return self.notes_call(current, path, data)
+
             if path == "/api/comments":
                 if current.kind == "markdown":
                     try:
@@ -208,28 +245,38 @@ def make_handler(cfg: Config):
                 else:
                     source = locate(cfg.root, current.pdf_path(), data)
                 item = new_comment({**data, "document": current.document}, source)
-                with cfg.store.edit() as items:
-                    items.append(item)
+                try:                                  # папка и памятка — только при первом замечании
+                    with cfg.store.edit() as items:
+                        items.append(item)
+                except OSError as e:
+                    return self.send(500, {"error": write_error(cfg.store.path.parent, e)})
+                try:
+                    write_doc(cfg.store.path)
+                except OSError:
+                    pass                              # замечание сохранено; памятка не обязательна
                 return self.send(200, item)
 
             m = re.match(r"/api/comments/(\w+)(/thread)?$", path)
-            if not m:
-                return self.send(404, {"error": "не найдено"})
-            with cfg.store.edit() as items:
-                it = next((c for c in items if c["id"] == m.group(1)), None)
-                if it is None or not self.belongs(it, current):
-                    return self.send(404, {"error": "нет комментария"})
-                if m.group(2):                       # автор дописал уточнение
-                    text = (data.get("text") or "").strip()
-                    if text:
-                        it.setdefault("thread", []).append({"who": "author", "text": text, "at": now()})
-                        it["status"] = "open"
-                else:
-                    for key in EDITABLE:
-                        if key in data:
-                            it[key] = data[key]
-                    if it.get("category") not in CATEGORIES:
-                        it["category"] = "rewrite"
+            if not m or not cfg.store.exists():
+                return self.send(404, {"error": "не найдено" if not m else "нет комментария"})
+            try:
+                with cfg.store.edit() as items:
+                    it = next((c for c in items if c["id"] == m.group(1)), None)
+                    if it is None or not self.belongs(it, current):
+                        return self.send(404, {"error": "нет комментария"})
+                    if m.group(2):                       # автор дописал уточнение
+                        text = (data.get("text") or "").strip()
+                        if text:
+                            it.setdefault("thread", []).append({"who": "author", "text": text, "at": now()})
+                            it["status"] = "open"
+                    else:
+                        for key in EDITABLE:
+                            if key in data:
+                                it[key] = data[key]
+                        if it.get("category") not in CATEGORIES:
+                            it["category"] = "rewrite"
+            except OSError as e:
+                return self.send(500, {"error": write_error(cfg.store.path.parent, e)})
             return self.send(200, it)
 
         def do_DELETE(self):
@@ -238,11 +285,17 @@ def make_handler(cfg: Config):
             current = self.document_config()
             if current is None:
                 return
-            m = re.match(r"/api/comments/(\w+)$", urlsplit(self.path).path)
-            if not m:
+            path = urlsplit(self.path).path
+            if path.startswith("/api/notes/"):
+                return self.notes_call(current, path, method="DELETE")
+            m = re.match(r"/api/comments/(\w+)$", path)
+            if not m or not cfg.store.exists():
                 return self.send(404, {"error": "не найдено"})
-            with cfg.store.edit() as items:
-                items[:] = [c for c in items if c["id"] != m.group(1) or not self.belongs(c, current)]
+            try:
+                with cfg.store.edit() as items:
+                    items[:] = [c for c in items if c["id"] != m.group(1) or not self.belongs(c, current)]
+            except OSError as e:
+                return self.send(500, {"error": write_error(cfg.store.path.parent, e)})
             return self.send(200, {"ok": True})
 
     return Handler

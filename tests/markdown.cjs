@@ -33,4 +33,12 @@ assert.ok(sections[2].html.includes('id="b-1"'));
 assert.ok(sections[0].html.includes('data-source-start="3" data-source-end="3"'));
 assert.ok(html('$\\frac{$').includes('katex-error'));
 assert.ok(html('').includes('Документ пуст'));
+// A stray "$$" must not swallow the following paragraphs and headings.
+const stray = render('$$ typo\n\nParagraph.\n\n## Head\n\nMore\n\n$$\n', 'paper.md', libraries);
+assert.equal(stray.length, 2); assert.ok(stray[1].html.includes('<h2'));
+// Links leaving the project root are disabled instead of silently retargeted.
+result = html('[up](../../../etc/x.md) ![img](../../../etc/p.png) [ok](../paper.pdf)');
+assert.ok(!result.includes('etc%2Fx.md') && !result.includes('/assets/etc/p.png'));
+assert.equal((result.match(/md-outside/g) || []).length, 2);
+assert.ok(result.includes('href="/?document=paper.pdf"'));
 console.log('Markdown renderer: formatting, math, source maps, links and untrusted input passed');

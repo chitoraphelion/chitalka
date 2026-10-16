@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Читалка</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="chitalka-project" content="/*CHITALKA_PROJECT*/">
 <link rel="stylesheet" href="/vendor/katex.min.css">
 <style>
 :root {
@@ -21,6 +22,41 @@
   --surface:#fff; --pagebg:#fff; --head:#1F5F6B; --pop-bg:#22262A; --pop-fg:#fff; --sel:rgba(31,95,107,.26);
   --toc:264px; --side:384px; --headh:52px;
 }
+/* личные заметки (N): свой цвет и пунктир, чтобы не путать с замечаниями агенту */
+:root { --note:#7A4E9C; --note-l:#F3ECF8; }
+:root[data-theme="dark"] { --note:#B993DA; --note-l:#2A2233; }
+.sidetabs { display:flex; gap:6px; padding:10px 12px 0; background:var(--panel); }
+.sidetabs button { flex:1; height:30px; border:1px solid var(--line); background:var(--surface); border-radius:8px; font-size:12.5px; color:var(--ink-2); }
+.sidetabs button b { color:var(--muted); margin-left:4px; }
+.sidetabs button.on { border-color:var(--teal); color:var(--teal); font-weight:700; }
+.sidetabs button[data-t="notes"].on { border-color:var(--note); color:var(--note); background:var(--note-l); }
+body.side-notes .filters { display:none; }
+.notes-head { padding:8px 14px 2px; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.notes-head .err { color:var(--terra); display:block; margin-top:4px; }
+.note-card { position:relative; margin:8px 12px; background:var(--card); border:1px dashed var(--note); border-left:4px solid var(--note); border-radius:10px; padding:9px 12px 8px; }
+.note-card.active { box-shadow:0 0 0 2px color-mix(in srgb, var(--note) 40%, transparent); }
+.note-card .meta { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.note-card .meta .who { color:var(--note); font-weight:700; }
+.note-card .meta .go { margin-left:auto; border:0; background:none; color:var(--note); font-weight:700; font-size:12px; border-radius:5px; padding:2px 6px; }
+.note-card .q { margin:6px 0 5px; padding-left:9px; border-left:3px solid var(--note); font:italic 13.5px/1.45 var(--serif); color:var(--ink-2); cursor:pointer; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.note-card .txt { white-space:pre-wrap; font-size:14px; overflow-wrap:anywhere; }
+.note-card .acts { display:flex; gap:6px; align-items:center; margin-top:8px; }
+.note-card .acts .when { font-size:11.5px; color:var(--muted); margin-right:auto; }
+.note-editor { margin:10px 12px; background:var(--surface); border:1px solid var(--note); box-shadow:0 0 0 3px var(--note-l); border-radius:14px; padding:10px 12px; }
+.note-editor .ch { font-size:12px; color:var(--muted); }
+.note-editor .ch b { color:var(--note); }
+.note-editor .q { margin:6px 0 8px; padding-left:9px; border-left:3px solid var(--note); font:italic 13.5px/1.45 var(--serif); color:var(--ink-2); max-height:7.3em; overflow:auto; overflow-wrap:anywhere; }
+.note-editor textarea { min-height:84px; margin-top:6px; }
+.note-editor textarea:focus { border-color:var(--note); box-shadow:0 0 0 3px var(--note-l); }
+.note-editor .row { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.note-editor .row .hint { margin-right:auto; font-size:12px; color:var(--muted); }
+.btn.note { background:var(--note); border-color:var(--note); color:#fff; font-weight:700; }
+.mark.note { background:color-mix(in srgb, var(--note) 9%, transparent); box-shadow:none; border-bottom:2px dotted var(--note); border-radius:0; }
+.mark.note.active { background:color-mix(in srgb, var(--note) 22%, transparent); outline:2px solid var(--note); }
+#selbar .notebtn { height:30px; background:transparent; color:#fff; border:1px dashed #C9A9E6; border-radius:7px; font-size:12.5px; padding:0 9px; display:flex; gap:6px; align-items:center; }
+#selbar .notebtn:hover { background:rgba(185,147,218,.22); }
+
 /* тёмная тема: data-theme ставит скрипт (авто — по системе) */
 :root[data-theme="dark"] {
   --teal:#5DB3C1; --teal-d:#4A9DAA; --teal-l:#1D3236; --terra:#E8875D; --terra-l:#3A241B;
@@ -292,7 +328,11 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 </header>
 <nav id="toc" aria-label="Оглавление"></nav>
 <main id="view" tabindex="-1"><div id="pages"></div></main>
-<aside id="side" aria-label="Комментарии">
+<aside id="side" aria-label="Комментарии и заметки">
+  <div class="sidetabs" role="tablist" id="sidetabs">
+    <button role="tab" data-t="comments" title="Замечания агенту (C)">Агенту<b id="tabc"></b></button>
+    <button role="tab" data-t="notes" title="Личные заметки (N): только для вас, агенту не уходят">Мои заметки<b id="tabn"></b></button>
+  </div>
   <div class="filters">
     <div class="seg" role="tablist" id="seg">
       <button role="tab" data-f="waiting" title="Ждут ответа ИИ">Ждут<b></b></button>
@@ -315,9 +355,10 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
   <table>
     <tr><td>Выделить мышью → <kbd>C</kbd> или <kbd>Enter</kbd></td><td>комментировать выделенное</td></tr>
     <tr><td><kbd>1</kbd>…<kbd>5</kbd> после выделения</td><td>комментарий с категорией: опечатка, переписать, факт, вопрос, мысль</td></tr>
-    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>сохранить комментарий</td></tr>
+    <tr><td><kbd>N</kbd> (с выделением или без)</td><td>личная заметка: только для вас, агенту не отправляется</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>сохранить комментарий или заметку</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>свернуть редактор (черновик сохранится)</td></tr>
-    <tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>следующий / предыдущий комментарий</td></tr>
+    <tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>следующий / предыдущий комментарий (на вкладке «Мои заметки» — заметка)</td></tr>
     <tr><td><kbd>/</kbd></td><td>поиск по статье (Enter — следующее совпадение)</td></tr>
     <tr><td><kbd>G</kbd></td><td>перейти на страницу</td></tr>
     <tr><td><kbd>Ctrl</kbd> или <kbd>Cmd</kbd> + <kbd>=</kbd> / <kbd>−</kbd> / <kbd>0</kbd></td><td>крупнее / мельче / по ширине</td></tr>
@@ -361,10 +402,18 @@ function resourceURL(path) {
 }
 
 // ---------------------------------------------------------------- состояние
-const storagePrefix = "kom." + (new URLSearchParams(location.search).get("document") ? encodeURIComponent(new URLSearchParams(location.search).get("document")) + "." : "");
+// Настройки вида — общие; позиция, фильтры и черновики — свои у каждого проекта и документа
+// (раньше черновики разных проектов на одном порту смешивались). Старые ключи читаются как запасные.
+const docParam = new URLSearchParams(location.search).get("document");
+const projectId = (document.querySelector('meta[name="chitalka-project"]')?.content || "").replace(/[^0-9a-f]/g, "");
+const legacyPrefix = "kom." + (docParam ? encodeURIComponent(docParam) + "." : "");
+const storagePrefix = "kom." + (projectId ? projectId + "." : "") + (docParam ? encodeURIComponent(docParam) + "." : "");
+const GLOBAL_KEYS = new Set(["theme", "invert", "toc", "side", "head", "focusPrev", "fit", "lastCat", "sideTab"]);
 const LS = {
-  get(k, d) { try { const v = localStorage.getItem(storagePrefix + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(storagePrefix + k, JSON.stringify(v)); } catch (e) {} },
+  key(k) { return GLOBAL_KEYS.has(k) ? "kom." + k : storagePrefix + k; },
+  get(k, d) { try { let v = localStorage.getItem(this.key(k)); if (v === null && !GLOBAL_KEYS.has(k)) v = localStorage.getItem(legacyPrefix + k);
+    return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(this.key(k), JSON.stringify(v)); if (!GLOBAL_KEYS.has(k) && legacyPrefix !== storagePrefix) localStorage.removeItem(legacyPrefix + k); } catch (e) {} },
 };
 let pdf = null, pdfMtime = 0, labels = null, outline = [], chapters = [];
 let scale = 1.4, fit = LS.get("fit", true);
@@ -812,7 +861,21 @@ function paintPage(n) {
     if (isAnswered(c)) { const l = rects[rects.length - 1]; layer.insertAdjacentHTML("beforeend", `<div class="pin" title="ИИ ответил" style="left:${st.el.offsetWidth - 34}px;top:${l.y + l.h / 2}px">ИИ</div>`); }
     st.marks.push({ id: c.id, rects, len: span[1] - span[0] });
   }
-  const sp = composer && composer.spans ? composer.spans : pending && window.getSelection().isCollapsed ? pending.spans : null;
+  for (const note of notes) {
+    if (!note.quote || note._stale || deletingNotes.has(note.id)) continue;
+    const pages = [pageOf(note)]; if (note.pageEnd && note.pageEnd !== note.page) pages.push(note.pageEnd + (pageOf(note) - note.page));
+    if (!pages.includes(n)) continue;
+    const qn = normStr(note.quote);
+    let span = findIn(ix.norm, qn, n === pageOf(note) ? note.ctx : null);
+    if (!span && pages.length > 1) span = n === pages[0] ? prefixSpan(ix.norm, qn) : suffixSpan(ix.norm, qn);
+    if (!span) continue;
+    const rects = rectsFor(n, span[0], span[1]); if (!rects.length) continue;
+    const cls = `mark note${note.id === activeNoteId ? " active" : ""}`;
+    for (const r of rects) layer.insertAdjacentHTML("beforeend", `<div class="${cls}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"></div>`);
+    st.marks.push({ id: note.id, kind: "note", rects, len: span[1] - span[0] });
+  }
+  const sp = composer && composer.spans ? composer.spans : noteEditor && noteEditor.spans ? noteEditor.spans
+    : pending && window.getSelection().isCollapsed ? pending.spans : null;
   if (sp && sp[n]) for (const r of rectsFor(n, sp[n][0], sp[n][1])) layer.insertAdjacentHTML("beforeend", `<div class="pending" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"></div>`);
 }
 // цитата через разрыв страницы: на первой странице — самое длинное начало цитаты
@@ -1018,8 +1081,9 @@ function onSelection(e) {
   showSelbar();
 }
 function showSelbar() {
-  selbar.innerHTML = `<button class="go" data-c="">Комментировать <kbd>C</kbd></button><span class="sep"></span>` +
-    CATS.map((c, i) => `<button class="dot cat-${c.k}" data-c="${c.k}" title="${c.n} — клавиша ${i + 1}" aria-label="${c.n}"><i></i><span>${["Опечатка", "Переписать", "Факт", "Вопрос", "Мысль"][i]}</span><small>${i + 1}</small></button>`).join("");
+  selbar.innerHTML = `<button class="go" data-c="" title="Замечание агенту: попадёт в chitalka list">Агенту <kbd>C</kbd></button><span class="sep"></span>` +
+    CATS.map((c, i) => `<button class="dot cat-${c.k}" data-c="${c.k}" title="${c.n} — клавиша ${i + 1}" aria-label="${c.n}"><i></i><span>${["Опечатка", "Переписать", "Факт", "Вопрос", "Мысль"][i]}</span><small>${i + 1}</small></button>`).join("") +
+    `<span class="sep"></span><button class="notebtn" data-note="1" title="Личная заметка: только для вас, агенту не отправляется">Заметка <kbd>N</kbd></button>`;
   selbar.style.display = "flex"; placeSelbar(); requestAnimationFrame(() => selbar.classList.add("show"));
 }
 function placeSelbar() {
@@ -1046,7 +1110,7 @@ function hideSelbar(keepPending) {
   if (!keepPending) { const had = pending; pending = null; if (had) for (let n = had.page; n <= had.pageEnd; n++) paintPage(n); }
 }
 selbar.addEventListener("mousedown", e => e.preventDefault());
-selbar.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; startComposer(b.dataset.c || LS.get("lastCat", "rewrite")); });
+selbar.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; if (b.dataset.note) return startNote(pending); startComposer(b.dataset.c || LS.get("lastCat", "rewrite")); });
 
 // ---------------------------------------------------------------- редактор
 const hasContent = c => !!(c && (c.text.trim() || (c.showSug && c.suggestion && c.suggestion.trim() !== c.quote.trim())));
@@ -1063,7 +1127,7 @@ function startComposer(cat) {
   pending = null;
   if (old) for (let n = old.page; n <= (old.pageEnd || old.page); n++) paintPage(n);
   for (let n = composer.page; n <= composer.pageEnd; n++) paintPage(n);
-  openSide(); renderList(); focusComposer();
+  setSideTab("comments"); openSide(); renderList(); focusComposer();
 }
 // начало и конец выделения в пунктах PDF от левого верхнего угла (так считает SyncTeX)
 function anchorsOf(p) {
@@ -1218,7 +1282,8 @@ function cardHTML(c) {
     <div class="acts">${acts}<button class="btn more" data-a="menu" aria-label="Ещё" title="Ещё">⋯</button></div>${menu}</article>`;
 }
 function renderList() {
-  renderFilters();
+  renderFilters(); renderSideTabs();
+  if (sideTab === "notes") return renderNotes();
   let html = "";
   for (const d of drafts()) if (!composer || d.did !== composer.did) html += draftBarHTML(d);
   if (composer && composer.mode === "new") html += composerHTML();
@@ -1245,6 +1310,7 @@ function scrollCardIntoView(id) { const el = listEl.querySelector(`.card[data-id
 
 function activate(id, jump) {
   const c = comments.find(x => x.id === id); if (!c) return;
+  if (sideTab !== "comments") setSideTab("comments");
   activeId = id;
   if (isAnswered(c) && isNew(c)) { markSeen(c); if (!comments.some(x => x !== c && isNew(x))) document.querySelectorAll('.toast[data-tag="answers"]').forEach(x => x.remove()); }
   if (!visibleByFilter(c)) { filter = isDone(c) ? "done" : isAnswered(c) ? "answered" : "waiting"; catFilter.clear(); onlyChapter = false; persistFilters(); }
@@ -1322,7 +1388,7 @@ listEl.addEventListener("keydown", e => {
     return;
   }
   if (e.target.matches("textarea.th")) { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); listEl.querySelector('[data-a="send"]').click(); } if (e.key === "Escape") { editingThread = null; renderList(); } return; }
-  if (card && e.target === card && e.key === "Enter") { e.preventDefault(); const c = comments.find(x => x.id === card.dataset.id); expandedDone.add(c.id); activate(c.id, true); listEl.querySelector(`.card[data-id="${c.id}"]`)?.focus({ preventScroll: true }); }
+  if (card && card.dataset.id && e.target === card && e.key === "Enter") { e.preventDefault(); const c = comments.find(x => x.id === card.dataset.id); expandedDone.add(c.id); activate(c.id, true); listEl.querySelector(`.card[data-id="${c.id}"]`)?.focus({ preventScroll: true }); }
   if (e.key === "Escape" && openMenu) { const id = openMenu; openMenu = null; renderList(); listEl.querySelector(`.card[data-id="${id}"] [data-a="menu"]`)?.focus(); }
   if (openMenu && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); const bs = [...listEl.querySelectorAll(".menu button")]; const i = bs.indexOf(document.activeElement); bs[(i + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]?.focus(); }
 });
@@ -1346,6 +1412,7 @@ function markAt(e) {
 view.addEventListener("click", e => {
   if (!window.getSelection().isCollapsed) return;
   const hit = markAt(e); if (!hit) return;
+  if (hit.m.kind === "note") { openSide(); activateNote(hit.m.id, false); return; }
   const c = comments.find(x => x.id === hit.m.id); if (isDone(c)) expandedDone.add(c.id);
   openSide(); activate(hit.m.id, false);
 });
@@ -1358,12 +1425,13 @@ view.addEventListener("mousemove", e => {
     document.querySelectorAll(".page.over-mark").forEach(p => p.classList.remove("over-mark"));
     if (!hit) { tip.style.display = "none"; tip.dataset.id = ""; clearTimeout(tipTimer); return; }
     hit.pageEl.classList.add("over-mark");
-    const c = comments.find(x => x.id === hit.m.id); const t = c.comment || c.suggestion || "";
+    const note = hit.m.kind === "note" ? notes.find(x => x.id === hit.m.id) : null;
+    const c = note || comments.find(x => x.id === hit.m.id); if (!c) return; const t = note ? note.text : c.comment || c.suggestion || "";
     if (tip.dataset.id === c.id && tip.style.display === "block") return;
     tip.dataset.id = c.id; tip.style.display = "none"; clearTimeout(tipTimer);
     const r = hit.m.rects[0], pb = hit.pageEl.getBoundingClientRect();
     tipTimer = setTimeout(() => {
-      tip.innerHTML = `<b>${CAT[catOf(c)].n}${isAnswered(c) ? " · есть ответ" : ""}</b><br>${esc(t.length > 90 ? t.slice(0, 90) + "…" : t)}`;
+      tip.innerHTML = `<b>${note ? "Моя заметка" : CAT[catOf(c)].n + (isAnswered(c) ? " · есть ответ" : "")}</b><br>${esc(t.length > 90 ? t.slice(0, 90) + "…" : t)}`;
       tip.style.display = "block"; tip.style.left = Math.min(e.clientX - 20, innerWidth - 270) + "px"; tip.style.top = Math.max(56, pb.top + r.y - tip.offsetHeight - 8) + "px";
     }, 400);
   });
@@ -1423,7 +1491,8 @@ async function rezoom(f, toFit) {
   await layoutPages(); restorePos(pos); repaintAll();
 }
 $("#zin").onclick = () => rezoom(1.15); $("#zout").onclick = () => rezoom(1 / 1.15); $("#zfit").onclick = () => rezoom(1, true);
-let rzT = 0; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => { if (fit && pdf) rezoom(1, true); }, 250); });
+// Markdown переносит строки по ширине окна: подсветки нужно пересчитать и без «по ширине»
+let rzT = 0; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => { if (fit && pdf) rezoom(1, true); else if (documentMode === "markdown") repaintAll(); }, 250); });
 function toggleToc() { if (innerWidth < 1200) document.body.classList.toggle("toc-open"); else { document.body.classList.toggle("toc-closed"); LS.set("toc", !document.body.classList.contains("toc-closed")); afterPanel(); } }
 function toggleSide() { if (innerWidth < 900) document.body.classList.toggle("side-open"); else { document.body.classList.toggle("side-closed"); LS.set("side", !document.body.classList.contains("side-closed")); afterPanel(); } }
 function openSide() { if (innerWidth < 900) document.body.classList.add("side-open"); else if (document.body.classList.contains("side-closed")) { document.body.classList.remove("side-closed"); LS.set("side", true); afterPanel(); } }
@@ -1499,6 +1568,7 @@ async function reloadBook() {
   const wasStale = new Set(comments.filter(c => c._stale).map(c => c.id));
   newMtime = 0; await openPdf(true);
   for (const c of comments) await relocate(c);
+  for (const note of notes) await relocate(note);
   const nowStale = comments.filter(c => c._stale && !wasStale.has(c.id) && !isDone(c));
   repaintAll(); renderList(); renderToc();
   toast(nowStale.length ? `Статья обновлена. ${nowStale.length} ${plural(nowStale.length, "комментарий больше не находится", "комментария больше не находятся", "комментариев больше не находятся")} в тексте — похоже, уже исправлено` : "Статья обновлена",
@@ -1538,13 +1608,15 @@ document.addEventListener("keydown", e => {
   if (selbar.classList.contains("show") && pending) {
     if (k === "KeyC" || (e.key === "Enter" && !onBtn)) { e.preventDefault(); startComposer(LS.get("lastCat", "rewrite")); return; }
     if (/^Digit[1-5]$/.test(k)) { e.preventDefault(); startComposer(CATS[+k.slice(5) - 1].k); return; }
+    if (k === "KeyN") { e.preventDefault(); startNote(pending); return; }
     if (e.key === "Escape") { window.getSelection().removeAllRanges(); hideSelbar(); return; }
   }
-  if (e.key === "Escape") { if (composer) closeComposer(false); document.body.classList.remove("toc-open", "side-open"); $("#sres").hidden = true; return; }
+  if (e.key === "Escape") { if (composer) closeComposer(false); if (noteEditor) closeNote(false); document.body.classList.remove("toc-open", "side-open"); $("#sres").hidden = true; return; }
   if (e.key === "?" || (k === "Slash" && e.shiftKey)) { $("#help").style.display = "flex"; return; }
   if (e.key === "/" || k === "Slash") { e.preventDefault(); toggleHead(true); $("#q").focus(); return; }
   if (k === "KeyG") { e.preventDefault(); toggleHead(true); $("#pg").focus(); return; }
   if (k === "KeyH") return toggleHead();
+  if (k === "KeyN") { e.preventDefault(); return startNote(null); }
   if (k === "KeyF") return toggleFocus();
   if (k === "BracketLeft") return toggleToc();
   if (k === "BracketRight") return toggleSide();
@@ -1556,6 +1628,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Backspace" && navStack.length) { e.preventDefault(); return goBack(); }
   if (e.key === "+" || e.key === "=" || k === "NumpadAdd") return rezoom(1.15);
   if (e.key === "-" || k === "NumpadSubtract" || k === "Minus") return rezoom(1 / 1.15);
+  if ((k === "KeyJ" || k === "KeyK") && sideTab === "notes") return stepNote(k === "KeyJ" ? 1 : -1);
   if (k === "KeyJ" || k === "KeyK") {
     const shown = comments.filter(visibleByFilter).sort((a, b) => pageOf(a) - pageOf(b));
     if (!shown.length) return;
@@ -1585,6 +1658,163 @@ $("#export").onclick = () => {
   a.download = "kommentarii.md"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
+// ---------------------------------------------------------------- личные заметки (N)
+// Только для автора: свой файл <документ>.notes.json рядом с документом, свой API (/api/notes).
+// В замечания агенту, chitalka list, экспорт и памятку не попадают.
+let notes = [], notesInfo = { path: "", error: "" }, noteEditor = null, activeNoteId = null;
+let sideTab = LS.get("sideTab", "comments") === "notes" ? "notes" : "comments";
+const deletingNotes = new Map();
+const noteFile = () => (notesInfo.path || "").split("/").pop() || "<документ>.notes.json";
+
+function setSideTab(t) {
+  sideTab = t === "notes" ? "notes" : "comments"; LS.set("sideTab", sideTab);
+  document.body.classList.toggle("side-notes", sideTab === "notes");
+}
+function renderSideTabs() {
+  document.body.classList.toggle("side-notes", sideTab === "notes");
+  document.querySelectorAll("#sidetabs button").forEach(b => { const on = b.dataset.t === sideTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+  const k = counts(); $("#tabc").textContent = k.waiting + k.answered || "";
+  $("#tabn").textContent = notes.filter(n => !deletingNotes.has(n.id)).length || "";
+}
+$("#sidetabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setSideTab(b.dataset.t); renderList(); repaintAll(); });
+
+async function loadNotes() {
+  let res;
+  try { res = await api("/api/notes"); } catch (e) { notesInfo = { path: notesInfo.path, error: e.message }; return; }
+  const str = v => v == null ? "" : String(v);
+  const fresh = (res.notes || []).filter(n => n && typeof n === "object" && n.id).map(n => ({ ...n, text: str(n.text), quote: str(n.quote) }));
+  const before = new Map(notes.map(n => [n.id, n]));
+  for (const n of fresh) { const old = before.get(n.id); if (old) { n._page = old._page; n._stale = old._stale; } }
+  notes = fresh; notesInfo = { path: res.path || "", error: res.error || "" };
+  for (const n of notes) if (n._page === undefined) await relocate(n);
+  const busy = noteEditor || (listEl.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA");
+  if (sideTab === "notes" && !busy) renderList(); else renderSideTabs();
+  repaintAll();
+}
+
+function startNote(p) {
+  if (noteEditor && noteEditor.text.trim()) {
+    hideSelbar(true); window.getSelection().removeAllRanges(); pending = null; repaintAll();
+    setSideTab("notes"); openSide(); renderList(); focusNote();
+    toast("Сначала сохраните или отмените начатую заметку"); return;
+  }
+  const draft = LS.get("noteDraft", null);
+  const page = p ? p.page : curPage, ch = chapterOf(page), sec = sectionOf(page);
+  noteEditor = { mode: "new", quote: p ? p.quote : "", page, pageEnd: p ? p.pageEnd : page, ctx: p ? p.ctx : null, spans: p ? p.spans : null,
+    where: (sec || ch || {}).title || "", text: "" };
+  if (draft && draft.text && (draft.quote || "") === noteEditor.quote) noteEditor.text = draft.text;
+  hideSelbar(true); window.getSelection().removeAllRanges(); pending = null;
+  setSideTab("notes"); openSide(); renderList(); repaintAll(); focusNote();
+}
+function focusNote() { const t = listEl.querySelector(".note-editor textarea"); if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); autogrow(t); t.closest(".note-editor").scrollIntoView({ block: "nearest" }); } }
+function closeNote(save) {
+  if (!noteEditor) return;
+  const ed = noteEditor;
+  if (!save && ed.mode === "new" && ed.text.trim()) { LS.set("noteDraft", { quote: ed.quote, text: ed.text, page: ed.page }); toast("Черновик заметки сохранён в браузере — N продолжит его"); }
+  if (!save && ed.mode === "edit") { const was = notes.find(n => n.id === ed.id); if (was && was.text !== ed.text) toast("Правка заметки не сохранена"); }
+  noteEditor = null; renderList(); repaintAll();
+}
+async function saveNote() {
+  const ed = noteEditor; if (!ed) return;
+  if (!ed.text.trim()) { toast("Напишите текст заметки"); return; }
+  const btn = listEl.querySelector('.note-editor [data-na="save"]'); if (btn) btn.disabled = true;
+  try {
+    if (ed.mode === "new") {
+      const ch = chapterOf(ed.page);
+      const it = await api("/api/notes", { body: { text: ed.text, quote: ed.quote, page: ed.page, pageEnd: ed.pageEnd, chapter: ch ? ch.title : "", ctx: ed.ctx || null } });
+      notes.push({ ...it, text: String(it.text || ""), quote: String(it.quote || "") }); activeNoteId = it.id; await relocate(notes[notes.length - 1]);
+      LS.set("noteDraft", null);
+      toast(notesInfo.path ? "Заметка сохранена · " + noteFile() : "Заметка сохранена");
+      if (!notesInfo.path) loadNotes();
+    } else {
+      const it = await api("/api/notes/" + ed.id, { body: { text: ed.text } });
+      Object.assign(notes.find(n => n.id === ed.id) || {}, it); activeNoteId = ed.id; toast("Заметка изменена");
+    }
+  } catch (e) {
+    // Текст не теряется: редактор остаётся открытым, копия — в браузере.
+    if (ed.mode === "new") LS.set("noteDraft", { quote: ed.quote, text: ed.text, page: ed.page });
+    if (btn) btn.disabled = false;
+    toast("Заметка не сохранена: " + e.message, { err: true }); return;
+  }
+  noteEditor = null; renderList(); repaintAll(); renderToc();
+}
+
+function noteEditorHTML() {
+  const ed = noteEditor;
+  return `<div class="note-editor" id="noteeditor">
+    <div class="ch"><b>${ed.mode === "new" ? "Новая заметка" : "Правка заметки"}</b> · ${unit()} ${esc(lbl(ed.page))}${ed.where ? " · " + esc(ed.where) : ""} · только для вас</div>
+    ${ed.quote ? `<div class="q">${esc(ed.quote)}</div>` : ""}
+    <textarea class="note-text" placeholder="Заметка для себя — агенту не отправляется" aria-label="Текст заметки">${esc(ed.text)}</textarea>
+    <div class="row"><span class="hint" title="Esc — закрыть, черновик сохранится в браузере"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+      <button class="btn" data-na="cancel">Отмена</button><button class="btn note" data-na="save">Сохранить</button></div></div>`;
+}
+function noteCardHTML(n) {
+  if (noteEditor && noteEditor.mode === "edit" && noteEditor.id === n.id) return noteEditorHTML();
+  const when = n.updated ? "изменена " + n.updated : n.created || "";
+  return `<article class="note-card ${n.id === activeNoteId ? "active" : ""}" data-nid="${esc(n.id)}" tabindex="0">
+    <div class="meta"><span class="who">Моя заметка</span>· ${unit()} ${esc(lbl(pageOf(n)))}${n._stale ? ` <span class="badge stale" title="Цитата не найдена — текст документа изменился">текст изменён</span>` : ""}
+      <button class="go" data-na="go">Перейти →</button></div>
+    ${n.quote ? `<div class="q" data-na="go" title="Перейти к месту">${esc(n.quote)}</div>` : ""}
+    <div class="txt">${esc(n.text)}</div>
+    <div class="acts"><span class="when">${esc(when)}</span><button class="btn" data-na="edit">Изменить</button><button class="btn" data-na="del">Удалить</button></div></article>`;
+}
+function renderNotes() {
+  const draft = !noteEditor && LS.get("noteDraft", null);
+  let html = `<div class="notes-head">Только для вас: агенту, в <code>chitalka list</code> и экспорт не попадают.<br>Файл: <code>${esc(noteFile())}</code> рядом с документом${notesInfo.path && !notes.length ? " — появится при первом сохранении" : ""}.
+    ${notesInfo.error ? `<span class="err">${esc(notesInfo.error)}</span>` : ""}</div>`;
+  if (draft && draft.text) html += `<div class="draftbar"><span>Черновик заметки: «${esc(draft.text.slice(0, 40))}${draft.text.length > 40 ? "…" : ""}»</span><button data-na="draft-open">Продолжить</button><button data-na="draft-drop">Удалить</button></div>`;
+  if (noteEditor && noteEditor.mode === "new") html += noteEditorHTML();
+  const shown = notes.filter(n => !deletingNotes.has(n.id)).sort((a, b) => pageOf(a) - pageOf(b) || (a.created < b.created ? -1 : 1));
+  for (const n of shown) html += noteCardHTML(n);
+  if (!shown.length && !noteEditor) html += `<div class="empty"><span class="ic">✎</span>Заметок нет. Выделите фрагмент и нажмите <kbd>N</kbd> — или <kbd>N</kbd> без выделения для заметки к текущему месту.</div>`;
+  const st = listEl.scrollTop; listEl.innerHTML = html; listEl.scrollTop = st;
+  listEl.querySelectorAll("textarea").forEach(autogrow);
+}
+
+function activateNote(id, jump) {
+  const n = notes.find(x => x.id === id); if (!n) return;
+  activeNoteId = id; if (sideTab !== "notes") setSideTab("notes");
+  renderList(); repaintAll();
+  listEl.querySelector(`.note-card[data-nid="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (jump) jumpTo(n);
+}
+function stepNote(dir) {
+  const shown = notes.filter(n => !deletingNotes.has(n.id)).sort((a, b) => pageOf(a) - pageOf(b));
+  if (!shown.length) return toast("Заметок пока нет — N, чтобы добавить");
+  let i = shown.findIndex(n => n.id === activeNoteId);
+  i = i < 0 ? (dir > 0 ? Math.max(0, shown.findIndex(n => pageOf(n) >= curPage)) : shown.length - 1) : (i + dir + shown.length) % shown.length;
+  activateNote(shown[i].id, true);
+}
+function deleteNote(n) {
+  const t = setTimeout(async () => {
+    deletingNotes.delete(n.id);
+    try { await api("/api/notes/" + n.id, { method: "DELETE", keepalive: true }); notes = notes.filter(x => x.id !== n.id); }
+    catch (e) { toast("Заметка не удалена: " + e.message, { err: true }); }
+    renderList(); repaintAll();
+  }, 6000);
+  deletingNotes.set(n.id, t); renderList(); repaintAll();
+  toast("Заметка удалена", { action: "Отменить", ms: 6000, onAction: () => { clearTimeout(deletingNotes.get(n.id)); deletingNotes.delete(n.id); renderList(); repaintAll(); } });
+}
+window.addEventListener("beforeunload", () => { for (const [id, t] of deletingNotes) { clearTimeout(t); fetch(resourceURL("/api/notes/" + id), { method: "DELETE", keepalive: true }); } });
+
+listEl.addEventListener("click", e => {
+  const a = e.target.closest("[data-na]")?.dataset.na; if (!a) { const card = e.target.closest(".note-card"); if (card && !e.target.closest("button")) activateNote(card.dataset.nid, false); return; }
+  if (a === "save") return saveNote();
+  if (a === "cancel") return closeNote(false);
+  if (a === "draft-open") return startNote(null);
+  if (a === "draft-drop") { LS.set("noteDraft", null); renderList(); return; }
+  const n = notes.find(x => x.id === e.target.closest(".note-card")?.dataset.nid); if (!n) return;
+  if (a === "go") return activateNote(n.id, true);
+  if (a === "edit") { noteEditor = { mode: "edit", id: n.id, text: n.text, quote: n.quote, page: pageOf(n), where: (chapterOf(pageOf(n)) || {}).title || "" }; renderList(); focusNote(); return; }
+  if (a === "del") return deleteNote(n);
+});
+listEl.addEventListener("input", e => { if (e.target.matches(".note-editor textarea") && noteEditor) { noteEditor.text = e.target.value; autogrow(e.target); } });
+listEl.addEventListener("keydown", e => {
+  if (!e.target.matches(".note-editor textarea")) return;
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNote(); }
+  else if (e.key === "Escape") { e.preventDefault(); closeNote(false); }
+});
+
 // ---------------------------------------------------------------- загрузка и фоновое обновление
 async function loadComments(first) {
   let fresh;
@@ -1608,7 +1838,7 @@ async function loadComments(first) {
   repaintAll(); renderToc();
   if (newAnswers.length) toast(`ИИ ответил на ${newAnswers.length} ${plural(newAnswers.length, "комментарий", "комментария", "комментариев")}`, { tag: "answers", action: "Показать", onAction: () => { filter = "answered"; persistFilters(); activate(newAnswers[0].id, true); }, ms: 8000 });
 }
-setInterval(() => loadComments(false), 15000);
+setInterval(() => { loadComments(false); loadNotes(); }, 15000);
 // новая сборка: без --watch — кнопка «обновить», с --watch — загрузка сама,
 // когда latexmk закончил и PDF не меняется два опроса подряд (файл дописан)
 let seenMtime = 0, lastState = null;
@@ -1622,7 +1852,7 @@ async function pollPdf() {
     newMtime = i.mtime;
     const stable = i.mtime === seenMtime; seenMtime = i.mtime;
     const busy = st === "building" || st === "starting" || pending || !window.getSelection().isCollapsed ||
-      (documentMode === "markdown" && (composer || editingThread));
+      (documentMode === "markdown" && (composer || editingThread || noteEditor));
     if (watchMode && stable && !busy) { setBuild(false); return reloadBook(); }
   }
   setBuild(!!newMtime, newMtime || pdfMtime);
@@ -1633,6 +1863,7 @@ async function pollPdf() {
   await openPdf(false);
   if (!pdf) return;
   await loadComments(true);
+  await loadNotes();
   const n = drafts().length; if (n) toast(n === 1 ? "Есть незаконченный черновик — он сверху списка комментариев" : `Незаконченных черновиков: ${n} — они сверху списка комментариев`);
   view.focus({ preventScroll: true });
 })().catch(e => { pagesEl.innerHTML = `<div class="state">Не удалось открыть статью: ${esc(e.message)}</div>`; });

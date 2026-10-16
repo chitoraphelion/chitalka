@@ -21,19 +21,17 @@ import sys
 import threading
 import urllib.request
 import webbrowser
-from importlib import resources
 from pathlib import Path
 from urllib.parse import urlencode
 
 from . import __version__
 from .build import Builder
 from .server import Config, serve
-from .store import DOC_NAME, Store, messages, now, store_path, waiting
+from .store import DOC_NAME, Store, messages, now, store_path, waiting, write_doc
 from .documents import DOCUMENT_SUFFIXES, is_markdown
 
 DEFAULT_PORT = 8765
 COMMANDS = {"list", "show", "reply", "done", "reopen", "init", "where"}
-DOC_MARK = "<!-- chitalka-doc"
 
 
 # ------------------------------------------------------------------ окружение
@@ -54,17 +52,11 @@ def font_stack(name: str) -> str:
     return ", ".join(fams + ["ui-monospace", '"SF Mono"', "Menlo", "monospace"])
 
 
-def write_doc(store_file: Path) -> Path:
-    """Памятка агентам рядом с файлом комментариев; свою старую версию обновляет."""
-    doc = store_file.parent / DOC_NAME
-    text = (resources.files("chitalka") / "agent_doc.md").read_text(encoding="utf-8")
-    text = text.replace("{STORE}", store_file.name)
-    if doc.exists() and not doc.read_text(encoding="utf-8").startswith(DOC_MARK):
-        return doc                                   # файл переписан человеком — не трогаем
-    if not doc.exists() or doc.read_text(encoding="utf-8") != text:
-        doc.parent.mkdir(parents=True, exist_ok=True)
-        doc.write_text(text, encoding="utf-8")
-    return doc
+def build_log(root: Path) -> Path:
+    """Лог latexmk для --watch: в XDG state, а не рядом с документом."""
+    import hashlib
+    state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "chitalka" / "latexmk"
+    return state / f"{root.name}-{hashlib.sha256(str(root).encode()).hexdigest()[:10]}.log"
 
 
 def find_root(args) -> Path:
@@ -106,10 +98,14 @@ def cmd_open(argv):
     if is_markdown(pdf) and not args.root:
         if Path(args.pdf).expanduser().is_absolute() or not pdf.is_relative_to(root):
             root = pdf.parent
+    elif pdf and not args.root and not pdf.is_relative_to(root):
+        # произвольный PDF откуда угодно: корень — его папка (или проект над build/)
+        root = pdf.parent.parent if pdf.parent.name == "build" and (pdf.parent.parent / "main.tex").exists() \
+            else pdf.parent
     if is_markdown(pdf) and not pdf.is_relative_to(root):
         p.error("Markdown должен находиться внутри --root проекта")
     store_file = store_path(root)
-    doc = write_doc(store_file)
+    doc = store_file.parent / DOC_NAME           # создаётся при первом сохранённом замечании
     cfg = Config(root=root, pdf=pdf, store=Store(store_file), font=font_stack(args.font or kitty_font()),
                  title=root.name, editor=args.editor)
 
@@ -148,11 +144,14 @@ def cmd_open(argv):
             sys.exit(f"--watch: нет {root / 'main.tex'}")
         outdir = "build" if (pdf and pdf.parent == root / "build") or (not pdf and (root / "build").is_dir()
                                                                      and not (root / "main.pdf").exists()) else None
-        cfg.builder = Builder(root, store_file.parent / "latexmk.log", args.engine, outdir).start()
+        cfg.builder = Builder(root, build_log(root), args.engine, outdir).start()
         print(f"Сборка: {' '.join(cfg.builder.cmd)}\n  лог: {cfg.builder.log}", flush=True)
     found = cfg.document_path()
+    later = "" if store_file.exists() else " (появится при первом замечании агенту)"
+    notes_hint = f"  Личные заметки (N): {found.name}.notes.json рядом с документом\n" if found else ""
     print(f"Читалка: {url}\n  {'Markdown' if markdown else 'PDF'}: {found or 'ещё не собран (main.pdf или build/main.pdf)'}\n"
-          f"  Комментарии: {store_file}\n  Памятка агентам: {doc}\nОстановить: Ctrl+C", flush=True)
+          f"  Замечания агенту (C): {store_file}{later}\n  Памятка агентам: {doc}{later}\n{notes_hint}"
+          f"Остановить: Ctrl+C", flush=True)
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     def stop_on_signal(signum, frame):                 # закрыли терминал или kill: тоже гасим latexmk
@@ -226,7 +225,9 @@ def cmd_agent(cmd, argv):
 
     if cmd == "where":
         cfg = Config(root=root, pdf=None, store=store, font="")
-        print(f"проект: {root}\nдокумент: {cfg.document_path()}\nкомментарии: {store_file}\nпамятка: {store_file.parent / DOC_NAME}")
+        state = "" if store_file.exists() else " (ещё нет: появится при первом замечании)"
+        print(f"проект: {root}\nдокумент: {cfg.document_path()}\nкомментарии: {store_file}{state}\n"
+              f"памятка: {store_file.parent / DOC_NAME}{state}\nлог latexmk (--watch): {build_log(root)}")
         return 0
     if cmd == "init":
         store_file.parent.mkdir(parents=True, exist_ok=True)
@@ -255,6 +256,8 @@ def cmd_agent(cmd, argv):
     text = getattr(args, "text", None) or getattr(args, "message", None)
     if text == "-":
         text = sys.stdin.read()
+    if not store.exists():                       # ничего не создаём ради ошибки
+        sys.exit(f"нет комментариев: {', '.join(ids)} (файл {store_file} ещё не создан)")
     with store.edit() as items:
         found = {c["id"]: c for c in items if c["id"] in ids}
         missing = [i for i in ids if i not in found]

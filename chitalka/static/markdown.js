@@ -53,7 +53,9 @@
       if (!delimiter) return false;
       const close = delimiter === "$$" ? "$$" : "\\]";
       let line = start, body = first.slice(delimiter.length), at = closing(body, close, 0);
-      while (at < 0 && line + 1 < end) {
+      // A display formula never spans a blank line (as in LaTeX): one stray "$$"
+      // must not swallow the following paragraphs and headings.
+      while (at < 0 && line + 1 < end && !state.isEmpty(line + 1)) {
         line++;
         body += "\n" + state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]);
         at = closing(body, close, 0);
@@ -69,26 +71,43 @@
     md.renderer.rules.math_display_inline = (tokens, i) => renderMath(tokens[i], true);
     md.renderer.rules.math_block = (tokens, i) => renderMath(tokens[i], true) + "\n";
 
+    // Relative links resolve against the document inside the project root. URL()
+    // would silently clamp "../../x.md" to "/x.md" — a different file — so the path
+    // is normalised by hand and links leaving the root are disabled (null).
     function link(value, image) {
       if (!value || value.startsWith("#")) return value;
-      const base = new URL(document.split("/").map(encodeURIComponent).join("/"), "http://chitalka.local/");
-      let url;
-      try { url = new URL(value, base); } catch (_) { return ""; }
-      if (url.origin !== base.origin) return value;
-      let path;
-      try { path = decodeURIComponent(url.pathname.slice(1)); } catch (_) { return ""; }
-      if (image) return "/assets/" + path.split("/").map(encodeURIComponent).join("/");
-      if (/\.(md|markdown|pdf)$/i.test(path)) return "/?document=" + encodeURIComponent(path) + url.hash;
-      return "/assets/" + path.split("/").map(encodeURIComponent).join("/") + url.hash;
+      if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//")) return value;  // external, mailto: …
+      const [, rawPath, hash = ""] = value.match(/^([^?#]*)(?:\?[^#]*)?(#.*)?$/) || [];
+      const parts = rawPath.startsWith("/") ? [] : document.split("/").slice(0, -1);
+      for (const segment of rawPath.split("/")) {
+        let name;
+        try { name = decodeURIComponent(segment); } catch (_) { return null; }
+        if (!name || name === ".") continue;
+        if (name === "..") { if (!parts.length) return null; parts.pop(); }
+        else parts.push(name);
+      }
+      const path = parts.join("/"), encoded = parts.map(encodeURIComponent).join("/");
+      if (!path) return null;
+      if (image) return "/assets/" + encoded;
+      if (/\.(md|markdown|pdf)$/i.test(path)) return "/?document=" + encodeURIComponent(path) + hash;
+      return "/assets/" + encoded + hash;
     }
+    const outside = "Ссылка ведёт за пределы проекта и отключена";
     const imageRule = md.renderer.rules.image;
     md.renderer.rules.image = (tokens, i, options, env, renderer) => {
-      tokens[i].attrSet("src", link(tokens[i].attrGet("src"), true));
+      const src = link(tokens[i].attrGet("src"), true);
+      if (src === null) { tokens[i].attrSet("src", ""); tokens[i].attrSet("title", outside); tokens[i].attrJoin("class", "md-outside"); }
+      else tokens[i].attrSet("src", src);
       return imageRule(tokens, i, options, env, renderer);
     };
     md.renderer.rules.link_open = (tokens, i, options, _env, renderer) => {
-      const token = tokens[i];
-      token.attrSet("href", link(token.attrGet("href"), false));
+      const token = tokens[i], href = link(token.attrGet("href"), false);
+      if (href === null) {
+        token.attrs = (token.attrs || []).filter(([name]) => name !== "href");
+        token.attrSet("title", outside); token.attrJoin("class", "md-outside");
+        return renderer.renderToken(tokens, i, options);
+      }
+      token.attrSet("href", href);
       if (/^(https?:)?\/\//i.test(token.attrGet("href") || "")) {
         token.attrSet("target", "_blank"); token.attrSet("rel", "noopener noreferrer");
       }

@@ -1,13 +1,17 @@
 """Хранилище комментариев: один JSON-файл в проекте.
 
 Файл пишут и сервер читалки, и консольные команды агентов, поэтому каждое
-изменение идёт под файловой блокировкой и записывается атомарно.
+изменение идёт под файловой блокировкой и записывается атомарно. Чтение
+блокировки не берёт и ничего не создаёт: открытие документа и `chitalka list`
+не оставляют в проекте ни папки, ни lock-файла. Папка, файл и памятка агентам
+появляются при первом сохранённом замечании (или по явному `chitalka init`).
 """
 import fcntl
 import json
 import time
 import uuid
 from contextlib import contextmanager
+from importlib import resources
 from pathlib import Path
 
 STORE_DIR = "kommentarii"
@@ -47,12 +51,17 @@ class Store:
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
-    def load(self) -> list:
+    def exists(self) -> bool:
+        return self.path.is_file()
+
+    def load(self, rename_broken: bool = True) -> list:
         if not self.path.exists():
             return []
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
+            if not rename_broken:                     # читатель без блокировки не трогает файл
+                return []
             broken = self.path.with_suffix(f".broken-{int(time.time())}.json")
             self.path.rename(broken)
             return []
@@ -72,8 +81,36 @@ class Store:
             self.save(items)
 
     def read(self) -> list:
-        with self.locked():
-            return self.load()
+        """Без блокировки и без создания файлов: запись атомарна (tmp + replace)."""
+        return self.load(rename_broken=False)
+
+
+DOC_MARK = "<!-- chitalka-doc"
+
+
+def write_doc(store_file: Path) -> Path:
+    """Памятка агентам рядом с файлом комментариев; свою старую версию обновляет."""
+    doc = store_file.parent / DOC_NAME
+    text = (resources.files("chitalka") / "agent_doc.md").read_text(encoding="utf-8")
+    text = text.replace("{STORE}", store_file.name)
+    if doc.exists() and not doc.read_text(encoding="utf-8").startswith(DOC_MARK):
+        return doc                                   # файл переписан человеком — не трогаем
+    if not doc.exists() or doc.read_text(encoding="utf-8") != text:
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(text, encoding="utf-8")
+    return doc
+
+
+def write_error(path: Path, e: OSError) -> str:
+    """Сообщение об ошибке записи, понятное в интерфейсе."""
+    import errno
+    if e.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+        why = "папка только для чтения или нет прав на запись"
+    elif e.errno == errno.ENOSPC:
+        why = "нет места на диске"
+    else:
+        why = e.strerror or str(e)
+    return f"Не сохранено: {why} ({path}). Текст остался в редакторе."
 
 
 def new_comment(data: dict, source) -> dict:

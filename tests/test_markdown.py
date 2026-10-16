@@ -126,5 +126,8 @@ def test_cli_reuses_reader_for_another_markdown(tmp_path, monkeypatch, capsys):
     assert cli.main([str(document), '--no-browser', '--watch']) == 0
     assert '?document=notes.md' in capsys.readouterr().out
     assert str(document) in complete([str(tmp_path / 'notes')])
-    doc = (tmp_path / 'kommentarii/HOW_TO_USE_CHITALKA.md').read_text()
-    assert '(markdown)' in doc and 'KaTeX' in doc
+    # open must not litter the project: the memo appears with the first saved comment
+    assert not (tmp_path / 'kommentarii').exists()
+    from chitalka.store import write_doc
+    doc = write_doc(tmp_path / 'kommentarii' / 'kommentarii.json').read_text()
+    assert '(markdown)' in doc and 'KaTeX' in doc and '.notes.json' in doc
