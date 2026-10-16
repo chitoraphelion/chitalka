@@ -1,6 +1,6 @@
-body.markdown #pages { min-width:0; }
-.markdown-page { width:min(880px, 100%); min-height:80px; padding:32px 42px; background:var(--card); color:var(--ink); }
-.md-content { font:17px/1.8 var(--serif); overflow-wrap:anywhere; }
+.markdown-page { box-sizing:border-box; background:var(--pagebg); color:var(--ink); flex:none; }
+.markdown-page .md-content { position:relative; z-index:2; }
+.md-content { font:15px/1.7 var(--serif); overflow-wrap:anywhere; }
 .md-content > :first-child { margin-top:0; }
 .md-content > :last-child { margin-bottom:0; }
 .md-content h1,.md-content h2,.md-content h3,.md-content h4,.md-content h5,.md-content h6 { line-height:1.3; margin:1.3em 0 .65em; color:var(--ink); scroll-margin-top:24px; }
@@ -30,4 +30,4 @@ body.markdown #pages { min-width:0; }
 body.invert .markdown-page { background:#191c20; color:#e2e5e8; --ink:#e2e5e8; --ink-2:#c2c7cc; --line:#343a40; --line-2:#262a2f; }
 body.markdown .hlLayer { mix-blend-mode:normal; }
 .markdown-page .hlLayer, .markdown-page .selLayer { overflow:hidden; }
-@media (max-width:900px) { .markdown-page { padding:24px; } body.markdown #pages { padding:16px 12px 40vh; } }
+

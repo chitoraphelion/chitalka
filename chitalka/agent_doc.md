@@ -41,6 +41,6 @@
 
 ## Поля комментария
 
-`id`, `created`, `status` (open|done), `category`, `page`/`pageEnd` (страницы PDF / разделы Markdown с 1),
+`id`, `created`, `status` (open|done), `category`, `page`/`pageEnd` (страницы с 1; Markdown в читалке разбит на листы A4 — ориентируйся на `source`),
 `document` (путь документа от корня проекта), `chapter`, `quote`, `comment`, `suggestion`, `source` {file, line, lineEnd?, how},
 `anchor` (координаты выделения в PDF), `reply` и `thread` [{who: author|ai, text, at}] — переписка.

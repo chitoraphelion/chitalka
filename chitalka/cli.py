@@ -183,8 +183,7 @@ def fmt(c: dict) -> str:
     src = c.get("source") or {}
     where = f"{src['file']}:{src['line']}" + (f"-{src['lineEnd']}" if src.get("lineEnd") else "") \
         + f" ({src.get('how', 'words')})" if src.get("file") else "место в исходнике не найдено"
-    unit = "разд." if is_markdown(c.get("document")) else "стр."
-    out = [f"[{c['id']}] {c.get('status', 'open')} · {c.get('category', 'rewrite')} · {unit} {c.get('page')}"
+    out = [f"[{c['id']}] {c.get('status', 'open')} · {c.get('category', 'rewrite')} · стр. {c.get('page')}"
            f" · {where}",
            f"  цитата: {short(c.get('quote'))}"]
     if c.get("comment"):

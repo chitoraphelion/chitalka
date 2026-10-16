@@ -393,7 +393,7 @@ const CATS = [
 const CAT = Object.fromEntries(CATS.map(c => [c.k, c]));
 const PT = 96 / 72;
 let documentMode = "pdf", markdownData = null, markdownSections = [];
-const unit = () => documentMode === "markdown" ? "разд." : "стр.";
+const unit = () => "стр.";
 function resourceURL(path) {
   const url = new URL(path, location.origin);
   const document = new URLSearchParams(location.search).get("document");
@@ -554,15 +554,8 @@ async function openMarkdown(keep) {
   markdownData = data; markdownSections = sections; documentMode = "markdown";
   document.body.classList.add("markdown");
   pdfMtime = data.mtime; textCache.clear(); labels = null;
-  pdf = { numPages: sections.length };
   $("#title").textContent = data.name; document.title = data.name + " — читалка";
-  $(".pagejump").firstChild.textContent = "разд. ";
-  $("#pg").setAttribute("aria-label", "Номер раздела");
-  $("#pg").title = "Перейти на раздел (G)";
-  $("#pgof").textContent = "из " + sections.length;
-  outline = sections.map((section, i) => ({ title: section.title, level: section.level, page: i + 1, chapter: true, end: i + 1 }));
-  chapters = outline.slice();
-  if (!keep && fit) scale = PT;
+  if (fit) scale = markdownFitScale();
   await layoutMarkdown();
   if (pos) restorePos(pos);
   if (!keep && location.hash) followMarkdownAnchor(location.hash);
@@ -570,20 +563,89 @@ async function openMarkdown(keep) {
   setBuild(false); renderToc(); onScroll();
 }
 
+// Markdown раскладывается на листы A4 (как PDF): 794×1123 px при 100 %, поля 72 px,
+// шрифт 15 px. Разбиение всегда считается при 100 %, поэтому номера страниц
+// не меняются при масштабировании; при другом масштабе те же листы увеличиваются.
+const A4 = { w: 794, h: 1123, pad: 72, font: 15 };
+const markdownFitScale = () => Math.max(.5 * PT, Math.min(2.4, (view.clientWidth - 64) / (A4.w / PT)));
+let relayoutTimer = 0;
 async function layoutMarkdown() {
+  const k = scale / PT, limit = A4.h - 2 * A4.pad - 2;
   pagesEl.innerHTML = ""; pageState.clear();
-  for (let i = 0; i < markdownSections.length; i++) {
-    const el = document.createElement("article"), n = i + 1;
+  // 1) всё содержимое в невидимом листе нужной ширины — чтобы измерить блоки
+  const sheet = document.createElement("article"); sheet.className = "page markdown-page measuring";
+  Object.assign(sheet.style, { width: A4.w + "px", padding: A4.pad + "px", position: "absolute", visibility: "hidden", left: "-99999px", top: "0" });
+  const content = document.createElement("div"); content.className = "md-content"; content.style.fontSize = A4.font + "px";
+  markdownSections.forEach((section, i) => {
+    const t = document.createElement("template"); t.innerHTML = section.html;
+    if (t.content.firstElementChild) t.content.firstElementChild.dataset.sec = i;
+    content.append(t.content);
+  });
+  sheet.append(content); pagesEl.append(sheet);
+  if (document.fonts) await document.fonts.ready;
+  // 2) единицы раскладки: блоки верхнего уровня; длинные списки — по пунктам
+  const top0 = content.getBoundingClientRect().top, bottom = content.getBoundingClientRect().bottom, units = [];
+  const blocks = [...content.children];
+  blocks.forEach((b, i) => {
+    const y = b.getBoundingClientRect().top - top0, next = blocks[i + 1] ? blocks[i + 1].getBoundingClientRect().top - top0 : bottom - top0;
+    const items = /^(UL|OL)$/.test(b.tagName) ? [...b.children].filter(li => li.tagName === "LI") : [];
+    if (items.length > 1 && next - y > limit / 2) {
+      items.forEach((li, j) => {
+        const ly = li.getBoundingClientRect().top - top0, ln = items[j + 1] ? items[j + 1].getBoundingClientRect().top - top0 : next;
+        units.push({ el: li, list: b, index: j, h: (j ? ln - ly : ln - y) });
+      });
+    } else units.push({ el: b, h: next - y, heading: /^H[1-6]$/.test(b.tagName) });
+  });
+  // 3) раскладка по листам; заголовок не остаётся последним на листе
+  const pages = []; let cur = [], used = 0;
+  const close = () => { cur.tall = used > limit; pages.push(cur); cur = []; used = 0; };
+  units.forEach((u, i) => {
+    const keep = u.heading && units[i + 1] ? Math.min(units[i + 1].h, limit / 3) : 0;
+    if (cur.length && used + u.h + keep > limit) close();
+    cur.push(u); used += u.h;
+  });
+  if (cur.length || !pages.length) close();
+  sheet.remove();
+  // 4) листы
+  pages.forEach((units, i) => {
+    const n = i + 1, el = document.createElement("article");
     el.className = "page markdown-page"; el.dataset.n = n; el.id = "p" + n;
-    el.innerHTML = `<div class="md-content">${markdownSections[i].html}</div><div class="hlLayer"></div><div class="selLayer"></div>`;
-    el.querySelector(".md-content").style.fontSize = (17 * scale / PT) + "px";
-    for (const image of el.querySelectorAll("img")) image.addEventListener("load", () => repaintAll());
+    // обычный лист — ровно A4 (мелкий шрифт может чуть иначе перенести строки — уйдут в нижнее поле);
+    // расти может только лист с блоком выше страницы (большая таблица, код, формула)
+    Object.assign(el.style, { width: A4.w * k + "px", [units.tall ? "minHeight" : "height"]: A4.h * k + "px", padding: A4.pad * k + "px" });
+    el.innerHTML = `<div class="md-content"></div><div class="hlLayer"></div><div class="selLayer"></div><span class="pnum">${n}</span>`;
+    const box = el.querySelector(".md-content"); box.style.fontSize = A4.font * k + "px";
+    let list = null;
+    for (const u of units) {
+      if (!u.list) { box.append(u.el); list = null; continue; }
+      if (!list || list.source !== u.list) {             // продолжение списка на новом листе
+        list = { source: u.list, el: u.list.cloneNode(false) };
+        if (u.list.tagName === "OL") list.el.start = (u.list.start || 1) + u.index;
+        box.append(list.el);
+      }
+      list.el.append(u.el);
+    }
+    for (const image of el.querySelectorAll("img")) if (!image.complete) image.addEventListener("load", scheduleRelayout, { once: true });
     pagesEl.appendChild(el);
     pageState.set(n, { el, rendered: true, textDivs: [], idx: null, marks: [] });
-  }
+  });
+  // 5) номера листов, оглавление по заголовкам
+  pdf = { numPages: pages.length };
+  $(".pagejump").firstChild.textContent = "стр. ";
+  $("#pgof").textContent = "из " + pages.length;
+  outline = markdownSections.map((section, i) => {
+    const node = pagesEl.querySelector(`[data-sec="${i}"]`), page = node ? +node.closest(".page").dataset.n : 1;
+    return { title: section.title, level: section.level, page, chapter: true };
+  });
+  outline.forEach((o, i) => o.end = (outline[i + 1] ? Math.max(o.page, outline[i + 1].page - 1) : pages.length));
+  chapters = outline.slice();
   $("#zval").textContent = Math.round(scale / PT * 100) + "%";
   $("#zfit").classList.toggle("on", fit);
-  if (document.fonts) await document.fonts.ready;
+}
+// картинка догрузилась и изменила высоту — разложить заново, сохранив место чтения
+function scheduleRelayout() {
+  clearTimeout(relayoutTimer);
+  relayoutTimer = setTimeout(async () => { const pos = savePos(); await layoutMarkdown(); if (pos) restorePos(pos); repaintAll(); renderToc(); }, 150);
 }
 
 function followMarkdownAnchor(hash) {
@@ -1483,10 +1545,8 @@ async function rezoom(f, toFit) {
   const pos = savePos(); fit = !!toFit; LS.set("fit", fit);
   if (!toFit) scale = Math.min(3.5, Math.max(.6, scale * f));
   if (documentMode === "markdown") {
-    if (toFit) scale = PT;
-    for (const st of pageState.values()) st.el.querySelector(".md-content").style.fontSize = (17 * scale / PT) + "px";
-    $("#zval").textContent = Math.round(scale / PT * 100) + "%"; $("#zfit").classList.toggle("on", fit);
-    restorePos(pos); repaintAll(); return;
+    if (toFit) scale = markdownFitScale();
+    await layoutMarkdown(); restorePos(pos); repaintAll(); renderToc(); return;
   }
   await layoutPages(); restorePos(pos); repaintAll();
 }
