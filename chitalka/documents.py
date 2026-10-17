@@ -68,3 +68,29 @@ def markdown_source(path, root, data, snapshot=None):
     if end > start:
         result["lineEnd"] = end
     return result
+
+
+TREE_LIMIT = 5000
+
+
+def list_dir(root, relative=""):
+    """Папка проекта для дерева файлов (<Space>e): только чтение, за корень не выходит."""
+    folder = safe_path(root, relative or ".")
+    if not folder.is_dir():
+        raise FileNotFoundError(f"нет папки {relative}")
+    entries = []
+    with os.scandir(folder) as it:
+        for entry in it:
+            if len(entries) >= TREE_LIMIT:
+                break
+            try:
+                is_dir, st = entry.is_dir(), entry.stat()
+            except OSError:                      # битая ссылка
+                is_dir, st = False, None
+            entries.append({"name": entry.name, "dir": is_dir, "link": entry.is_symlink(),
+                            "exec": bool(st) and not is_dir and os.access(entry.path, os.X_OK),
+                            "size": st.st_size if st else 0, "mtime": st.st_mtime if st else 0,
+                            "doc": not is_dir and Path(entry.name).suffix.lower() in DOCUMENT_SUFFIXES})
+    rel = folder.relative_to(Path(root).resolve()).as_posix()
+    return {"root": str(Path(root).resolve()), "dir": "" if rel == "." else rel, "path": str(folder),
+            "entries": entries, "truncated": len(entries) >= TREE_LIMIT}

@@ -13,7 +13,8 @@ from .editor import open_in_editor
 from .locate import locate
 from . import notes as personal
 from .store import CATEGORIES, STATUSES, Store, new_comment, now, write_doc, write_error
-from .documents import DOCUMENT_SUFFIXES, IMAGE_TYPES, document_id, is_markdown, markdown_snapshot, markdown_source, safe_path
+from .documents import (DOCUMENT_SUFFIXES, IMAGE_TYPES, document_id, is_markdown, list_dir, markdown_snapshot,
+                        markdown_source, safe_path)
 
 STATIC = resources.files("chitalka") / "static"
 LOCAL_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost)(:\d+)?$")
@@ -121,7 +122,7 @@ def make_handler(cfg: Config):
                 project = hashlib.sha256(str(cfg.root).encode()).hexdigest()[:12]
                 html = html.replace("/*CHITALKA_PROJECT*/", project)
                 return self.send(200, html, TYPES[".html"])
-            if path in ("/markdown.js", "/markdown.css"):
+            if path in ("/markdown.js", "/markdown.css", "/tree.js", "/tree.css"):
                 f = STATIC / path[1:]
                 return self.send(200, f.read_bytes(), TYPES[Path(path).suffix])
             if path.startswith("/vendor/"):
@@ -140,6 +141,15 @@ def make_handler(cfg: Config):
                 if f.is_file() and f.suffix.lower() in IMAGE_TYPES:
                     return self.send(200, f.read_bytes(), IMAGE_TYPES[f.suffix.lower()])
                 return self.send(404, {"error": "Изображение не найдено"})
+            if path == "/api/tree":                  # дерево файлов: только чтение внутри корня
+                try:
+                    return self.send(200, list_dir(cfg.root, parse_qs(urlsplit(self.path).query).get("dir", [""])[0]))
+                except ValueError:
+                    return self.send(403, {"error": "Выше корня проекта читалка не открывает"})
+                except FileNotFoundError:
+                    return self.send(404, {"error": "Папка не найдена"})
+                except OSError as e:
+                    return self.send(403, {"error": f"Нет доступа: {e.strerror or e}"})
             current = self.document_config()
             if current is None:
                 return

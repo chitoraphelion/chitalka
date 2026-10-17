@@ -1,0 +1,37 @@
+/* Дерево файлов (<Space>e): netrw в nvim с zenbones поверх фона kitty. */
+#tree { --t-bg:#f0f0f0; --t-fg:#2C363C; --t-cm:#8E8E8E; --t-nr:#ABABAB; --t-cl:#E4E4E4; --t-cc:#E6E6E6;
+  --t-hl:#DEB9D6; --t-err:#A8334C; --t-exe:#286438; --t-lnk:#185278; --t-sl:#DADADA; --t-sl2:#E6E6E6; --t-a:#2C363C; --t-a-fg:#f0f0f0;
+  --t-cmd:#6B5218; --t-more:#286438;
+  position:fixed; inset:0; z-index:95; display:flex; flex-direction:column; background:var(--t-bg); color:var(--t-fg);
+  font:15px/1.4 var(--mono, monospace); outline:none; user-select:none; cursor:default; }
+#tree[hidden] { display:none; }
+:root[data-theme="dark"] #tree { --t-bg:#191919; --t-fg:#B4BDC3; --t-cm:#6E6E6E; --t-nr:#555555; --t-cl:#232323; --t-cc:#202020;
+  --t-hl:#65435E; --t-err:#DE6E7C; --t-exe:#8AB698; --t-lnk:#88A2CC; --t-sl:#353535; --t-sl2:#262626; --t-a:#B4BDC3; --t-a-fg:#191919;
+  --t-cmd:#B0A270; --t-more:#8AB698; }
+#tree .buf { flex:1; min-height:0; overflow:hidden; }
+#tree .tl { display:flex; white-space:pre; height:1.4em; }
+#tree .tl.cl { background:var(--t-cl); }
+#tree .nr { flex:none; width:var(--nrw, 4ch); color:var(--t-nr); }
+#tree .tl.cl .nr { color:var(--t-fg); font-weight:700; }
+#tree .tx { flex:1; min-width:0; overflow:hidden;
+  background:linear-gradient(to right, transparent 79ch, var(--t-cc) 79ch, var(--t-cc) 80ch, transparent 80ch); }
+#tree .tl.cl .tx { background:none; }
+#tree .tl[data-i]:not(.eob) .tx:not(.cm) { cursor:pointer; }
+#tree .tx.cm { color:var(--t-cm); font-style:italic; }
+#tree .tx.dir { font-weight:700; }
+#tree .tx.exe { color:var(--t-exe); }
+#tree .tx.lnk { color:var(--t-lnk); font-style:italic; }
+#tree .eob .tx { color:var(--t-nr); background:none; }
+#tree .hl { background:var(--t-hl); }
+#tree .cur { background:var(--t-fg); color:var(--t-bg); }
+#tree .sl { flex:none; display:flex; white-space:pre; background:var(--t-sl2); }
+#tree .sl .a { background:var(--t-a); color:var(--t-a-fg); font-weight:700; }
+#tree .sl .a.cmd { background:var(--t-cmd); }
+#tree .sl .c { background:var(--t-sl); }
+#tree .sl .fill { flex:1; }
+#tree .sl .y { background:var(--t-sl); }
+#tree .cmdline { flex:none; display:flex; white-space:pre; height:1.4em; }
+#tree .cmdline .err { color:var(--t-err); }
+#tree .cmdline .showcmd { margin-left:auto; padding-right:11ch; }
+#tree .box { flex:none; margin:0; font:inherit; white-space:pre; border-top:1px solid var(--t-sl); padding-top:2px; }
+#tree .box .more { color:var(--t-more); }

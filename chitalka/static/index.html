@@ -310,6 +310,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 }
 </style>
 <link rel="stylesheet" href="/markdown.css">
+<link rel="stylesheet" href="/tree.css">
 </head>
 <body>
 <header>
@@ -369,6 +370,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
     <tr><td>Клик по ссылке, <kbd>Alt</kbd>+<kbd>←</kbd></td><td>перейти (литература, формула, раздел) и вернуться</td></tr>
     <tr><td>Навести на ссылку</td><td>предпросмотр места, куда она ведёт</td></tr>
     <tr><td><kbd>E</kbd>, «✎ файл:строка» на карточке</td><td>открыть место в исходнике в nvim</td></tr>
+    <tr><td><kbd>Пробел</kbd> <kbd>e</kbd></td><td>дерево файлов как netrw: <kbd>j</kbd>/<kbd>k</kbd>, <kbd>Enter</kbd>, <kbd>-</kbd> вверх, <kbd>/</kbd> поиск, <kbd>:q</kbd> выйти, <kbd>F1</kbd> все клавиши</td></tr>
     <tr><td><kbd>D</kbd> / <kbd>I</kbd></td><td>тема: тёплая светлая ↔ тёмная / тёмные страницы</td></tr>
   </table>
   <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Клавиши работают в любой раскладке. Закрыть — <kbd>Esc</kbd> или клик мимо.</p>
@@ -378,6 +380,7 @@ textarea:focus, .inp:focus { outline:none; border-color:var(--teal); box-shadow:
 <script src="/vendor/markdown-it.min.js"></script>
 <script src="/vendor/katex.min.js"></script>
 <script src="/markdown.js"></script>
+<script src="/tree.js"></script>
 <script>
 "use strict";
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
@@ -1654,6 +1657,7 @@ function toast(text, o = {}) {
 }
 
 // ---------------------------------------------------------------- клавиатура
+let leader = null;
 document.addEventListener("keydown", e => {
   if ($("#help").style.display === "flex") { if (e.key === "Escape" || e.key === "?") $("#help").style.display = "none"; return; }
   if (e.altKey && e.key === "ArrowLeft" && !isTyping()) { e.preventDefault(); goBack(); return; }
@@ -1666,6 +1670,16 @@ document.addEventListener("keydown", e => {
   if (isTyping() || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.code;
   const onBtn = document.activeElement && /^(BUTTON|A)$/.test(document.activeElement.tagName) && !selbar.contains(document.activeElement);
+  // <Space>e — дерево файлов, как <leader>e → :Explore в nvim; пробел сам по себе по-прежнему листает
+  if (k === "Space" && !onBtn) {
+    e.preventDefault(); leader = e.shiftKey ? null : { at: performance.now(), top: view.scrollTop };
+    view.scrollBy({ top: (e.shiftKey ? -1 : 1) * Math.max(40, view.clientHeight - 60), behavior: "smooth" }); return;
+  }
+  if (k === "KeyE" && !e.shiftKey && leader && performance.now() - leader.at < 1000) {
+    e.preventDefault(); view.scrollTo({ top: leader.top, behavior: "instant" }); leader = null;
+    hideSelbar(); return ChitalkaTree.open();
+  }
+  leader = null;
   if (selbar.classList.contains("show") && pending) {
     if (k === "KeyC" || (e.key === "Enter" && !onBtn)) { e.preventDefault(); startComposer(LS.get("lastCat", "rewrite")); return; }
     if (/^Digit[1-5]$/.test(k)) { e.preventDefault(); startComposer(CATS[+k.slice(5) - 1].k); return; }

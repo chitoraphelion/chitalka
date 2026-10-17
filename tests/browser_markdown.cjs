@@ -6,6 +6,7 @@ const repo = path.resolve(__dirname, '..'), python = process.env.PYTHON || 'pyth
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chitalka-markdown-test-'));
 fs.writeFileSync(path.join(root, 'paper.md'), fs.readFileSync(path.join(repo, 'examples/optimization.md')));
 fs.writeFileSync(path.join(root, 'other.md'), '# Другой документ\n\nОтдельный текст.\n');
+fs.mkdirSync(path.join(root, 'sub'));fs.writeFileSync(path.join(root, 'sub/doc.md'), '# Вложенный документ\n\nТекст из sub.\n');
 fs.writeFileSync(path.join(root, 'nb.ipynb'), fs.readFileSync(path.join(repo, 'examples/notebook.ipynb')));
 fs.writeFileSync(path.join(root, 'image.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30"><rect width="120" height="30" fill="teal"/></svg>');
 const server = spawn(python, ['-u', '-c', `
@@ -95,6 +96,36 @@ const widths=await page.locator('#view').evaluate(el=>({scroll:el.scrollWidth,wi
 await page.setViewportSize({width:1600,height:1100});
 // Two documents share a server but comments stay scoped.
 const other=await context.newPage();await other.goto(cfg.url+'?document=other.md');await other.waitForSelector('.md-content');assert.equal(await other.locator('.md-content').innerText(),'Другой документ\n\nОтдельный текст.');assert.equal(await other.evaluate(()=>comments.length),0);await other.close();
+// <Space>e: netrw-like file tree; vim motions, Enter, -, search, :q; documents open in the reader.
+const tp=await context.newPage();tp.on('pageerror',e=>errors.push(String(e)));await tp.goto(cfg.url);await tp.waitForSelector('.md-content .katex');
+await tp.locator('#view').focus();const top0=await tp.evaluate(()=>view.scrollTop);
+await tp.keyboard.press('Space');await tp.keyboard.press('e');await tp.waitForSelector('#tree:not([hidden]) .tl.cl');
+const treeLine=()=>tp.evaluate(()=>({cur:document.querySelector('#tree .tl.cl .tx').textContent,nr:document.querySelector('#tree .tl.cl .nr').textContent.trim(),
+ cmd:document.querySelector('#tree .cmdline').textContent,open:ChitalkaTree.isOpen(),rel:[...document.querySelectorAll('#tree .tl:not(.cl) .nr')].map(n=>n.textContent.trim())}));
+let tl=await treeLine();assert.equal(tl.cur,'paper.md','cursor starts on the current document');
+assert.equal(await tp.evaluate(()=>view.scrollTop),top0,'<Space>e does not scroll the document');
+assert.ok((await tp.locator('#tree').innerText()).includes('Netrw Directory Listing'));assert.equal(await tp.evaluate(()=>ChitalkaTree.state.top),0,'short listing starts at the first line');
+assert.ok(tl.rel.includes('1')&&+tl.nr>1,'relative numbers around an absolute current line: '+JSON.stringify(tl));
+await tp.keyboard.press('g');await tp.keyboard.press('g');assert.equal((await treeLine()).nr,'1');
+await tp.keyboard.press('G');await tp.keyboard.type('/sub');await tp.keyboard.press('Enter');assert.equal((await treeLine()).cur,'sub/');
+await tp.keyboard.press('Enter');await tp.waitForFunction(()=>ChitalkaTree.state.dir==='sub');assert.equal((await treeLine()).cur,'doc.md');
+await tp.keyboard.press('-');await tp.waitForFunction(()=>ChitalkaTree.state.dir==='');assert.equal((await treeLine()).cur,'sub/','- returns to the folder we came from');
+await tp.keyboard.press('2');await tp.keyboard.press('k');await tp.keyboard.press('3');await tp.keyboard.press('j');
+await tp.keyboard.type(':w');await tp.keyboard.press('Enter');assert.ok((await treeLine()).cmd.includes('E382'));
+await tp.keyboard.type(':blah');await tp.keyboard.press('Enter');assert.ok((await treeLine()).cmd.includes('E492: Not an editor command: blah'));
+await tp.keyboard.press('Escape');assert.ok((await treeLine()).open,'Esc does not close the tree, like netrw');
+await tp.keyboard.press('-');assert.ok((await treeLine()).cmd.includes('Выше корня'));
+await tp.keyboard.type(':q');await tp.keyboard.press('Enter');assert.equal((await treeLine()).open,false);
+assert.ok(await tp.locator('#tree').isHidden());await tp.keyboard.press('e');assert.equal(await tp.evaluate(()=>ChitalkaTree.isOpen()),false,'plain e does not open the tree');
+await tp.keyboard.press('Space');await tp.keyboard.press('e');await tp.waitForSelector('#tree:not([hidden]) .tl.cl');
+await tp.keyboard.type(':e sub/doc.md');await tp.keyboard.press('Enter');
+await tp.waitForURL(/document=sub%2Fdoc\.md/);await tp.waitForSelector('.md-content h1');assert.equal(await tp.locator('.md-content h1').innerText(),'Вложенный документ');
+await tp.keyboard.press('Space');await tp.keyboard.press('e');await tp.waitForFunction(()=>ChitalkaTree.state.dir==='sub');assert.equal((await treeLine()).cur,'doc.md');
+await tp.keyboard.press('-');await tp.waitForFunction(()=>ChitalkaTree.state.dir==='');
+await tp.keyboard.type('/paper');await tp.keyboard.press('Enter');await tp.keyboard.press('Enter');
+await tp.waitForURL(u=>!String(u).includes('document='));await tp.waitForSelector('.md-content .katex');
+await tp.screenshot({path:path.join(os.tmpdir(),'chitalka-tree.png')});
+await tp.close();
 // Jupyter notebook: static cells, saved outputs and images; a comment points to the cell in .ipynb.
 const nb=await context.newPage();nb.on('pageerror',e=>errors.push(String(e)));await nb.goto(cfg.url+'?document=nb.ipynb');await nb.waitForSelector('.md-content .katex');
 await nb.waitForFunction(()=>[...document.querySelectorAll('.md-content img')].length>=3&&[...document.querySelectorAll('.md-content img')].every(i=>i.complete&&i.naturalWidth>0));
