@@ -160,8 +160,8 @@ def make_handler(cfg: Config):
                     return self.send(404, {"error": "Markdown не выбран"})
                 try:
                     return self.send(200, markdown_snapshot(p, cfg.root))
-                except (OSError, UnicodeError):
-                    return self.send(400, {"error": "Не удалось прочитать Markdown в UTF-8"})
+                except (OSError, UnicodeError, ValueError) as e:
+                    return self.send(400, {"error": f"Не удалось прочитать документ: {e}"})
             if path == "/api/pdfinfo":
                 p = current.document_path()
                 return self.send(200, {"mtime": p.stat().st_mtime_ns / 1_000_000_000 if p else 0,
@@ -234,7 +234,7 @@ def make_handler(cfg: Config):
                 if current.kind == "markdown":
                     try:
                         snapshot = markdown_snapshot(current.document_path(), cfg.root)
-                    except (OSError, UnicodeError, TypeError):
+                    except (OSError, UnicodeError, TypeError, ValueError):
                         return self.send(409, {"error": "Markdown недоступен. Дождитесь сохранения файла и обновите документ."})
                     if data.get("documentRevision") != snapshot["revision"]:
                         return self.send(409, {"error": "Markdown изменился. Обновите документ и выделите фрагмент снова; текст комментария можно сохранить в черновик."})

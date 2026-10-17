@@ -6,6 +6,7 @@ const repo = path.resolve(__dirname, '..'), python = process.env.PYTHON || 'pyth
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chitalka-markdown-test-'));
 fs.writeFileSync(path.join(root, 'paper.md'), fs.readFileSync(path.join(repo, 'examples/optimization.md')));
 fs.writeFileSync(path.join(root, 'other.md'), '# Другой документ\n\nОтдельный текст.\n');
+fs.writeFileSync(path.join(root, 'nb.ipynb'), fs.readFileSync(path.join(repo, 'examples/notebook.ipynb')));
 fs.writeFileSync(path.join(root, 'image.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30"><rect width="120" height="30" fill="teal"/></svg>');
 const server = spawn(python, ['-u', '-c', `
 from pathlib import Path
@@ -85,6 +86,7 @@ await page.evaluate(()=>loadComments(false));await page.locator('[data-f=answere
 await page.locator('#q').fill('гладкую');await page.waitForFunction(()=>sHits.length>0);assert.ok(await page.locator('#sres a').count()>0);
 await page.locator('#q').fill('');await page.keyboard.press('Escape');const z0=parseInt(await page.locator('#zval').innerText());await page.locator('#zin').click();await page.waitForFunction(z=>parseInt(document.querySelector('#zval').textContent)!==z,z0);assert.ok(Math.abs(parseInt(await page.locator('#zval').innerText())-z0*1.15)<=1.5);await page.locator('#zfit').click();
 await page.evaluate(()=>cycleTheme());await page.screenshot({path:path.join(os.tmpdir(), 'chitalka-markdown-dark.png')});
+const darkInk=await page.evaluate(()=>getComputedStyle(document.querySelector('.md-content p')).color);assert.equal(darkInk,'rgb(34, 38, 42)','dark UI keeps dark text on the white sheet');
 await page.setViewportSize({width:760,height:1000});
 await page.waitForFunction(()=>document.querySelector('#view').clientWidth>=750);
 await page.waitForFunction(()=>document.querySelector('.markdown-page').getBoundingClientRect().width<=document.querySelector('#view').clientWidth);
@@ -93,6 +95,23 @@ const widths=await page.locator('#view').evaluate(el=>({scroll:el.scrollWidth,wi
 await page.setViewportSize({width:1600,height:1100});
 // Two documents share a server but comments stay scoped.
 const other=await context.newPage();await other.goto(cfg.url+'?document=other.md');await other.waitForSelector('.md-content');assert.equal(await other.locator('.md-content').innerText(),'Другой документ\n\nОтдельный текст.');assert.equal(await other.evaluate(()=>comments.length),0);await other.close();
+// Jupyter notebook: static cells, saved outputs and images; a comment points to the cell in .ipynb.
+const nb=await context.newPage();nb.on('pageerror',e=>errors.push(String(e)));await nb.goto(cfg.url+'?document=nb.ipynb');await nb.waitForSelector('.md-content .katex');
+await nb.waitForFunction(()=>[...document.querySelectorAll('.md-content img')].length>=3&&[...document.querySelectorAll('.md-content img')].every(i=>i.complete&&i.naturalWidth>0));
+const nbView=await nb.evaluate(()=>({imgs:[...document.querySelectorAll('.md-content img')].map(i=>i.naturalWidth),labels:[...document.querySelectorAll('.nb-label')].map(l=>l.textContent),
+ inp:document.querySelectorAll('.nb-in').length,out:document.querySelectorAll('.nb-out').length,err:document.querySelectorAll('.nb-err').length,kind:document.querySelector('#build')?.textContent||'',text:document.querySelector('#pages').innerText}));
+assert.deepEqual(nbView.imgs.slice(0,3).sort((a,b)=>a-b),[40,120,160],JSON.stringify(nbView.imgs));
+assert.ok(nbView.labels.includes('In [1]')&&nbView.labels.includes('In [5]'),JSON.stringify(nbView.labels));
+assert.equal(nbView.inp,6);assert.ok(nbView.out>=3&&nbView.err>=2,JSON.stringify(nbView));
+assert.ok(nbView.text.includes('ZeroDivisionError: division by zero')&&!nbView.text.includes('\u001b'));
+await nb.screenshot({path:path.join(os.tmpdir(),'chitalka-notebook.png'),fullPage:false});
+const nbPending=await nb.evaluate(()=>{const code=[...document.querySelectorAll('.nb-in code')].find(c=>c.textContent.includes('for k in range')),r=document.createRange();r.selectNodeContents(code);const s=window.getSelection();s.removeAllRanges();s.addRange(r);onSelection();return {...window.eval('pending')};});
+assert.ok(!nbPending.quote.includes('In ['),'label is not part of the quote');
+await nb.waitForSelector('#selbar.show');await nb.keyboard.press('c');await nb.locator('.composer textarea.main').fill('Шаг поменять');await nb.keyboard.press('Control+Enter');
+await nb.waitForFunction(()=>comments.length===1&&!composer);
+const nbComment=await nb.evaluate(()=>comments[0]);assert.equal(nbComment.source.how,'notebook');assert.equal(nbComment.source.file,'nb.ipynb');assert.equal(nbComment.source.cell,2);
+assert.ok(fs.readFileSync(path.join(root,'nb.ipynb'),'utf8').split('\n')[nbComment.source.line-1].includes('import numpy'));
+await nb.close();
 fs.appendFileSync(cfg.root+'/paper.md','\n\n![Local image](image.svg)\n\nАвтообновление проверено.\n');
 await page.waitForSelector('.md-content img',{timeout:15000});await page.waitForFunction(()=>document.querySelector('.md-content img').naturalWidth>0);assert.equal(await page.locator('.md-content img').evaluate(n=>n.naturalWidth),120);assert.ok((await page.locator('#pages').innerText()).includes('Автообновление проверено.'));
 // Changes while composing do not discard input; stale source anchors are rejected.

@@ -26,7 +26,16 @@
 .md-content .katex-error { white-space:pre-wrap; }
 .md-content ::selection { background:var(--sel); }
 .md-content .md-outside { color:var(--muted); text-decoration:line-through dotted; cursor:not-allowed; }
+.md-content .nb-cell { margin:.8em 0; }
+.md-content .nb-label { display:block; font:11px var(--mono); color:var(--muted); margin:0 0 2px 2px; user-select:none; }
+.md-content .nb-in pre { border-left:3px solid var(--teal); }
+.md-content .nb-out pre { background:transparent; border:1px solid var(--line-2); border-left:3px solid var(--line); }
+.md-content .nb-err pre { background:color-mix(in srgb, var(--terra) 8%, transparent); border-left:3px solid var(--terra); }
+.md-content .nb-out + p > img, .md-content p > img[alt="вывод"] { display:block; margin:.4em 0; }
 .md-empty { color:var(--muted); font-style:italic; }
+/* тёмная тема интерфейса: лист остаётся белым (как PDF), поэтому внутри него светлая палитра */
+:root[data-theme="dark"] body:not(.invert) .markdown-page { --ink:#22262A; --ink-2:#4A4F55; --muted:#6B7075; --line:#DDD6CA; --line-2:#ECE6DB;
+  --teal:#1F5F6B; --teal-l:#E6F0F1; --terra:#B5532C; --terra-l:#FBEEE8; }
 body.invert .markdown-page { background:#191c20; color:#e2e5e8; --ink:#e2e5e8; --ink-2:#c2c7cc; --line:#343a40; --line-2:#262a2f; }
 body.markdown .hlLayer { mix-blend-mode:normal; }
 .markdown-page .hlLayer, .markdown-page .selLayer { overflow:hidden; }

@@ -16,6 +16,10 @@
 
   function parser(document, libraries = root) {
     const md = libraries.markdownit({ html: false, linkify: true, typographer: false });
+    // Notebook outputs arrive as data: images; allow raster and SVG there (an <img>
+    // cannot run SVG scripts), everything else goes through markdown-it's own check.
+    const validate = md.validateLink;
+    md.validateLink = url => /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i.test(url.trim()) || validate(url);
     const macros = {};
     const math = (tex, display) => libraries.katex.renderToString(tex, {
       displayMode: display, throwOnError: false, trust: false, strict: "ignore", maxExpand: 1000, macros
@@ -89,7 +93,7 @@
       const path = parts.join("/"), encoded = parts.map(encodeURIComponent).join("/");
       if (!path) return null;
       if (image) return "/assets/" + encoded;
-      if (/\.(md|markdown|pdf)$/i.test(path)) return "/?document=" + encodeURIComponent(path) + hash;
+      if (/\.(md|markdown|ipynb|pdf)$/i.test(path)) return "/?document=" + encodeURIComponent(path) + hash;
       return "/assets/" + encoded + hash;
     }
     const outside = "Ссылка ведёт за пределы проекта и отключена";
@@ -134,7 +138,11 @@
       const original = md.renderer.rules[name];
       md.renderer.rules[name] = (tokens, i, ...rest) => {
         const token = tokens[i], map = token.map || [0, 1];
-        return `<div data-source-start="${map[0] + 1}" data-source-end="${map[1]}">${original(tokens, i, ...rest)}</div>`;
+        // Jupyter cells (see chitalka/notebook.py): "python nb-in 3", "text nb-out", "text nb-err".
+        const cell = /(?:^|\s)nb-(in|out|err|raw)(?:\s+(\d+))?/.exec(token.info || "");
+        const label = !cell ? "" : cell[1] === "in" ? `In [${cell[2] || " "}]` : cell[1] === "err" ? "stderr / ошибка" : cell[1] === "raw" ? "raw" : "";
+        return `<div${cell ? ` class="nb-cell nb-${cell[1]}"` : ""} data-source-start="${map[0] + 1}" data-source-end="${map[1]}">` +
+          (label ? `<span class="nb-label">${label}</span>` : "") + original(tokens, i, ...rest) + `</div>`;
       };
     }
     return md;
@@ -162,7 +170,7 @@
       html: md.renderer.render(s.tokens, md.options, env) || '<p class="md-empty">Документ пуст.</p>' }));
   }
 
-  const ignored = element => element.matches?.(".katex-mathml,annotation,.pnum,.hlLayer,.selLayer");
+  const ignored = element => element.matches?.(".katex-mathml,annotation,.pnum,.hlLayer,.selLayer,.nb-label");
   function text(node) {
     if (node.nodeType === 3) return node.data;
     if (ignored(node)) return "";

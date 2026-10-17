@@ -75,7 +75,7 @@ def probe(port: int):
 def cmd_open(argv):
     p = argparse.ArgumentParser(prog="chitalka", description="Читалка PDF и Markdown с формулами и комментариями.",
                                 epilog="Комментарии: list|show|reply|done|reopen|init|where. Сессии: sessions|ps|stop. Автодополнение: completion zsh|bash --install")
-    p.add_argument("pdf", nargs="?", metavar="DOCUMENT", help="PDF или .md/.markdown; по умолчанию main.pdf, build/main.pdf, main.md или README.md")
+    p.add_argument("pdf", nargs="?", metavar="DOCUMENT", help="PDF, .md/.markdown или .ipynb; по умолчанию main.pdf, build/main.pdf, main.md или README.md")
     p.add_argument("-p", "--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--root", help="корень проекта с документами и комментариями (по умолчанию текущая папка)")
     p.add_argument("--font", help="шрифт интерфейса (по умолчанию font_family из kitty.conf)")
@@ -94,7 +94,7 @@ def cmd_open(argv):
     if pdf and not pdf.exists():
         p.error(f"нет файла {pdf}")
     if pdf and (not pdf.is_file() or pdf.suffix.lower() not in DOCUMENT_SUFFIXES):
-        p.error("нужен файл PDF, .md или .markdown")
+        p.error("нужен файл PDF, .md, .markdown или .ipynb")
     if is_markdown(pdf) and not args.root:
         if Path(args.pdf).expanduser().is_absolute() or not pdf.is_relative_to(root):
             root = pdf.parent
@@ -183,6 +183,8 @@ def fmt(c: dict) -> str:
     src = c.get("source") or {}
     where = f"{src['file']}:{src['line']}" + (f"-{src['lineEnd']}" if src.get("lineEnd") else "") \
         + f" ({src.get('how', 'words')})" if src.get("file") else "место в исходнике не найдено"
+    if src.get("cell"):
+        where += f", ячейка {src['cell']}" + (f"–{src['cellEnd']}" if src.get("cellEnd") else "")
     out = [f"[{c['id']}] {c.get('status', 'open')} · {c.get('category', 'rewrite')} · стр. {c.get('page')}"
            f" · {where}",
            f"  цитата: {short(c.get('quote'))}"]

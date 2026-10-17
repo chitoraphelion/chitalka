@@ -1610,7 +1610,8 @@ function setBuild(isNew, mtime) {
   const b = $("#build"); const t = new Date((mtime || pdfMtime) * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   b.classList.remove("busy", "err"); b.classList.toggle("new", isNew);
   if (documentMode === "markdown") {
-    b.textContent = isNew ? "● Markdown изменён · обновить" : "◉ Markdown · автообновление";
+    const kind = markdownData && markdownData.notebook ? "Ноутбук" : "Markdown";
+    b.textContent = isNew ? `● ${kind} изменён · обновить` : `◉ ${kind} · автообновление`;
     b.title = isNew ? "Загрузить новую версию (R)" : "Изменения исходника подхватываются автоматически";
     return;
   }
