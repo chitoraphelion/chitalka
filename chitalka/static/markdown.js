@@ -14,8 +14,110 @@
     return -1;
   }
 
+  // HTML ноутбуков — markdown-ячейки и выводы (таблицы pandas, Styler, оформление курсов),
+  // как в Jupyter, но очищенный: поток тегов пересобирается по белому списку. Скрипты,
+  // стили, формы, svg и т. п. выбрасываются вместе с содержимым; id и class не выводятся
+  // (не задеть разметку и глобальные имена читалки); ссылки — http(s) или внутри проекта,
+  // картинки — data:, http(s) или файлы проекта; встроенный стиль — безопасные свойства
+  // без url(). Правила Styler вида `#T_x_row0_col1 {…}` переносятся во встроенный стиль.
+  const HTML_KEEP = new Set(("table thead tbody tfoot tr th td caption colgroup col div span p br hr b strong i em u s del ins " +
+    "sub sup small mark code pre kbd samp var blockquote q cite abbr ul ol li dl dt dd h1 h2 h3 h4 h5 h6 a img figure figcaption " +
+    "details summary section article header footer aside nav main").split(" "));
+  const HTML_VOID = new Set(["br", "hr", "img", "col"]);
+  const HTML_SKIP = new Set(("script style noscript template iframe frame frameset object embed applet button select " +
+    "textarea datalist svg math canvas video audio picture map title xmp plaintext noembed noframes dialog head").split(" "));
+  const CSS_PROPS = new Set(("color background background-color background-image border border-top border-bottom border-left " +
+    "border-right border-color border-width border-style border-radius border-collapse margin margin-top margin-bottom margin-left " +
+    "margin-right padding padding-top padding-bottom padding-left padding-right display flex flex-wrap flex-direction flex-grow " +
+    "flex-shrink flex-basis align-items justify-content gap row-gap column-gap font-size font-weight font-style line-height " +
+    "letter-spacing text-transform text-align text-decoration text-decoration-color text-decoration-thickness text-underline-offset " +
+    "vertical-align white-space word-break overflow-wrap width min-width max-width height max-height box-sizing opacity list-style " +
+    "list-style-type").split(" "));
+  const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  const decode = s => String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] !== "#" ? (ENTITIES[e.toLowerCase()] ?? m)
+    : String.fromCodePoint(Math.min(0x10ffff, parseInt(e[1] === "x" || e[1] === "X" ? e.slice(2) : e.slice(1), e[1] === "x" || e[1] === "X" ? 16 : 10) || 0xfffd)));
+  const attr = s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const htmlText = s => String(s).replace(/&(?!(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);)/gi, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  function cssDecls(text, into = new Map()) {
+    for (const part of decode(text || "").split(";")) {
+      const at = part.indexOf(":"); if (at < 0) continue;
+      const prop = part.slice(0, at).trim().toLowerCase(), value = part.slice(at + 1).replace(/!\s*important/gi, "").trim();
+      if (!CSS_PROPS.has(prop) || !value || value.length > 200 || !/^[#\w\s.,%()+\-/'"]+$/.test(value)) continue;
+      if (/url|expression|javascript|image-set|element\(|attr\(|@/i.test(value)) continue;
+      if (prop === "display" && !/^(block|inline|inline-block|flex|inline-flex|grid|none|list-item|table|table-cell|table-row)$/.test(value)) continue;
+      into.set(prop, value);
+    }
+    return into;
+  }
+  const ATTR = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  const TAG = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<[!?][^>]*>|<(\/?)([A-Za-z][\w:-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*(\/?)>/g;
+  // cleaner(link, math): (html, {stack, source, text}) → безопасный HTML; stack — открытые теги
+  function cleaner(link, mathText) {
+    return function clean(html, o = {}) {
+      const stack = o.stack || [], rules = [];
+      String(html).replace(/<style\b[^>]*>([\s\S]*?)(<\/style>|$)/gi, (_, css) => {
+        for (const m of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g))
+          for (const sel of m[1].split(",").map(x => x.trim())) {
+            const q = /^#([A-Za-z_][\w-]*)(?:\s+([a-z][a-z0-9]*))?$/.exec(sel);
+            if (q) rules.push({ id: q[1], tag: q[2] || null, decls: m[2] });
+          }
+        return "";
+      });
+      let out = "", at = 0, skip = null, depth = 0, m;
+      const text = t => { if (!skip && t) out += o.text ? o.text(t) : htmlText(t); };
+      TAG.lastIndex = 0;
+      while ((m = TAG.exec(html))) {
+        text(html.slice(at, m.index)); at = TAG.lastIndex;
+        if (!m[2]) continue;                                   // комментарии, <!doctype>, <?…>
+        const close = m[1] === "/", raw = m[2].toLowerCase();
+        if (skip) { if (raw === skip) depth += close ? -1 : (m[4] ? 0 : 1); if (!depth) skip = null; continue; }
+        if (HTML_SKIP.has(raw)) { if (!close && !m[4]) { skip = raw; depth = 1; } continue; }
+        const tag = raw === "font" || raw === "center" ? (raw === "font" ? "span" : "div") : raw;
+        if (!HTML_KEEP.has(tag)) continue;                    // html, body, form, label, input… — только содержимое
+        if (close) {                                           // закрываем только то, что открыли сами
+          const i = stack.map(x => x.tag).lastIndexOf(tag);
+          if (i >= 0) { for (const x of stack.splice(i).reverse()) out += `</${x.tag}>`; }
+          continue;
+        }
+        const a = {};
+        for (const [, name, v1, v2, v3] of (m[3] || "").matchAll(ATTR)) a[name.toLowerCase()] = decode(v1 ?? v2 ?? v3 ?? "");
+        const style = new Map(), id = a.id || null, ids = stack.map(x => x.id);
+        for (const r of rules) if (r.tag ? r.tag === tag && ids.includes(r.id) : r.id === id) cssDecls(r.decls, style);
+        if (raw === "font" && /^#?\w{1,20}$/.test(a.color || "")) style.set("color", a.color);
+        if (raw === "center") style.set("text-align", "center");
+        cssDecls(a.style, style);
+        let attrs = "";
+        for (const name of ["colspan", "rowspan", "width", "height"]) if (/^\d{1,4}(px|%)?$/.test(a[name] || "")) attrs += ` ${name}="${a[name]}"`;
+        for (const name of ["align", "valign"]) if (/^[a-z]{1,10}$/i.test(a[name] || "")) attrs += ` ${name}="${a[name]}"`;
+        for (const name of ["title", "alt"]) if (a[name]) attrs += ` ${name}="${attr(a[name].slice(0, 300))}"`;
+        if (tag === "details" && "open" in a) attrs += " open";
+        if (tag === "a") {
+          const href = (a.href || "").trim(), safe = /^https?:\/\//i.test(href) ? href : /^[a-z][a-z0-9+.-]*:|^\/\//i.test(href) ? null : link(href, false);
+          if (safe) attrs += ` href="${attr(safe)}"` + (/^https?:/i.test(safe) ? ' target="_blank" rel="noopener noreferrer"' : "");
+        }
+        if (tag === "img") {
+          const src = (a.src || "").trim();
+          const safe = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[\w+/=\s]+$/i.test(src) ? src.replace(/\s+/g, "")
+            : /^https?:\/\//i.test(src) ? src : /^[a-z][a-z0-9+.-]*:|^\/\//i.test(src) || !src ? null : link(src, true);
+          if (!safe) continue;
+          attrs += ` src="${attr(safe)}"`;
+        }
+        if (style.size) attrs += ` style="${attr([...style].map(([k, v]) => `${k}:${v}`).join(";"))}"`;
+        if (o.source) attrs += o.source;
+        out += `<${tag}${attrs}>`;
+        if (!HTML_VOID.has(tag) && !m[4]) stack.push({ tag, id });
+      }
+      text(html.slice(at));
+      if (!o.stack) for (const x of stack.reverse()) out += `</${x.tag}>`;
+      return out;
+    };
+  }
+
   function parser(document, libraries = root) {
-    const md = libraries.markdownit({ html: false, linkify: true, typographer: false });
+    // HTML разрешён только в ноутбуках (как в Jupyter) и всегда проходит через clean();
+    // в .md он по-прежнему показывается как текст.
+    const notebook = /\.ipynb$/i.test(document);
+    const md = libraries.markdownit({ html: notebook, linkify: true, typographer: false });
     // Notebook outputs arrive as data: images; allow raster and SVG there (an <img>
     // cannot run SVG scripts), everything else goes through markdown-it's own check.
     const validate = md.validateLink;
@@ -25,6 +127,34 @@
       displayMode: display, throwOnError: false, trust: false, strict: "ignore", maxExpand: 1000, macros
     });
     const escape = md.utils.escapeHtml;
+    // формулы в тексте HTML-блоков (Jupyter рисует MathJax поверх всей ячейки)
+    function mathText(t) {
+      let out = "", i = 0;
+      for (;;) {
+        const j = t.slice(i).search(/\$|\\\(|\\\[/);
+        if (j < 0) break;
+        const at = i + j;
+        if (escaped(t, at)) { out += htmlText(t.slice(i, at + 1)); i = at + 1; continue; }
+        const [open, close, display] = t.startsWith("$$", at) ? ["$$", "$$", true] : t.startsWith("\\(", at) ? ["\\(", "\\)", false]
+          : t.startsWith("\\[", at) ? ["\\[", "\\]", true] : ["$", "$", false];
+        const end = closing(t, close, at + open.length);
+        if (end < 0 || end === at + open.length || (open === "$" && /\s/.test(t[at + 1]))) { out += htmlText(t.slice(i, at + open.length)); i = at + open.length; continue; }
+        const tex = decode(t.slice(at + open.length, end));
+        out += htmlText(t.slice(i, at)) + `<span class="md-math${display ? " md-display" : ""}" data-tex="${attr(tex)}">${math(tex, display)}</span>`;
+        i = end + close.length;
+      }
+      return out + htmlText(t.slice(i));
+    }
+    const clean = cleaner((value, image) => link(value, image), mathText);
+    md.renderer.rules.html_block = (tokens, i, _options, env) => {
+      const token = tokens[i], stack = env.htmlStack || (env.htmlStack = []);
+      // граница ячейки ноутбука (chitalka/notebook.py): незакрытые теги ячейки закрываются, как в Jupyter
+      if (/^<!--\s*chitalka:cell\s*-->\s*$/.test(token.content)) return stack.splice(0).reverse().map(x => `</${x.tag}>`).join("");
+      const source = token.map ? ` data-source-start="${token.map[0] + 1}" data-source-end="${token.map[1]}"` : "";
+      return clean(token.content, { stack, source, text: mathText });
+    };
+    md.renderer.rules.html_inline = (tokens, i, _options, env) =>
+      tokens[i].meta === "chitalka" ? tokens[i].content : clean(tokens[i].content, { stack: env.htmlStack || (env.htmlStack = []) });
     function renderMath(token, display) {
       const tag = token.block ? "div" : "span";
       const source = token.map ? ` data-source-start="${token.map[0] + 1}" data-source-end="${token.map[1]}"` : "";
@@ -41,7 +171,8 @@
       else if (src[start] === "$" && !/\s/.test(src[start + 1] || " ")) open = close = "$";
       else return false;
       let end = closing(src, close, start + open.length);
-      while (open === "$" && end >= 0 && (/\s/.test(src[end - 1]) || /\d/.test(src[end + 1] || ""))) end = closing(src, close, end + 1);
+      // в .md «$5 и $10» — не формула (как в pandoc); в ноутбуке, как в Jupyter, `$x = 0 $` — формула
+      while (open === "$" && end >= 0 && ((!notebook && /\s/.test(src[end - 1])) || /\d/.test(src[end + 1] || ""))) end = closing(src, close, end + 1);
       if (end < 0 || end === start + open.length || (!display && src.slice(start, end).includes("\n"))) return false;
       if (!silent) {
         const token = state.push(display ? "math_display_inline" : "math_inline", "", 0);
@@ -50,7 +181,8 @@
       state.pos = end + close.length;
       return true;
     });
-    md.block.ruler.before("paragraph", "chitalka_math_block", (state, start, end, silent) => {
+    // до lheading: иначе «$$ / \\operatorname{A} / = / …» становится setext-заголовком
+    md.block.ruler.before("lheading", "chitalka_math_block", (state, start, end, silent) => {
       if (state.sCount[start] - state.blkIndent >= 4) return false;
       const first = state.src.slice(state.bMarks[start] + state.tShift[start], state.eMarks[start]);
       const delimiter = first.startsWith("$$") ? "$$" : first.startsWith("\\[") ? "\\[" : null;
@@ -127,7 +259,7 @@
           const first = token.children[0];
           if (first && first.type === "text" && /^\[[ xX]\] /.test(first.content)) {
             const check = new state.Token("html_inline", "", 0);
-            check.content = `<input type="checkbox" disabled${/^\[[xX]\]/.test(first.content) ? " checked" : ""}> `;
+            check.content = `<input type="checkbox" disabled${/^\[[xX]\]/.test(first.content) ? " checked" : ""}> `; check.meta = "chitalka";
             first.content = first.content.slice(4); token.children.unshift(check);
           }
         }
@@ -139,8 +271,11 @@
       md.renderer.rules[name] = (tokens, i, ...rest) => {
         const token = tokens[i], map = token.map || [0, 1];
         // Jupyter cells (see chitalka/notebook.py): "python nb-in 3", "text nb-out", "text nb-err".
-        const cell = /(?:^|\s)nb-(in|out|err|raw)(?:\s+(\d+))?/.exec(token.info || "");
-        const label = !cell ? "" : cell[1] === "in" ? `In [${cell[2] || " "}]` : cell[1] === "err" ? "stderr / ошибка" : cell[1] === "raw" ? "raw" : "";
+        const cell = /(?:^|\s)nb-(in|out|err|raw|html|widget)(?:\s+(\d+))?/.exec(token.info || "");
+        const label = !cell ? "" : cell[1] === "in" ? `In [${cell[2] || " "}]` : cell[1] === "err" ? "stderr / ошибка" : cell[1] === "raw" ? "raw"
+          : cell[1] === "widget" ? "виджет Jupyter · состояние в файле не сохранено" : "";
+        if (cell && cell[1] === "html")
+          return `<div class="nb-cell nb-html" data-source-start="${map[0] + 1}" data-source-end="${map[1]}">${clean(token.content)}</div>`;
         return `<div${cell ? ` class="nb-cell nb-${cell[1]}"` : ""} data-source-start="${map[0] + 1}" data-source-end="${map[1]}">` +
           (label ? `<span class="nb-label">${label}</span>` : "") + original(tokens, i, ...rest) + `</div>`;
       };
@@ -154,20 +289,27 @@
     let section = { title: document.split("/").pop(), level: 0, tokens: [], line: 1 };
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
-      if (token.type === "heading_open" && token.level === 0) {
+      // заголовок из HTML ноутбука (<h2>…</h2> в markdown-ячейке) тоже начинает раздел оглавления
+      const html = token.type === "html_block" && token.level === 0 && /^\s*<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/i.exec(token.content);
+      const htmlTitle = html && decode(html[2].replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+      if ((token.type === "heading_open" && token.level === 0) || htmlTitle) {
         if (section.tokens.length) sections.push(section);
-        const inline = tokens[i + 1];
-        const title = inline.children.map(t => t.type === "text" || t.type === "code_inline" || t.type.startsWith("math") ? t.content : "").join("") || inline.content;
-        const base = title.toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").trim().replace(/\s+/g, "-") || "section";
-        const count = ids.get(base) || 0; ids.set(base, count + 1);
-        token.attrSet("id", base + (count ? "-" + count : ""));
-        section = { title, level: Number(token.tag.slice(1)) - 1, tokens: [], line: token.map[0] + 1 };
+        let title = htmlTitle, level = html ? Number(html[1]) - 1 : Number(token.tag.slice(1)) - 1;
+        if (!htmlTitle) {
+          const inline = tokens[i + 1];
+          title = inline.children.map(t => t.type === "text" || t.type === "code_inline" || t.type.startsWith("math") ? t.content : "").join("") || inline.content;
+          const base = title.toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").trim().replace(/\s+/g, "-") || "section";
+          const count = ids.get(base) || 0; ids.set(base, count + 1);
+          token.attrSet("id", base + (count ? "-" + count : ""));
+        }
+        section = { title, level, tokens: [], line: token.map[0] + 1 };
       }
       section.tokens.push(token);
     }
     if (section.tokens.length || !sections.length) sections.push(section);
+    // каждый раздел разбирается браузером отдельно: незакрытый HTML не переходит в следующий
     return sections.map(s => ({ title: s.title, level: s.level, line: s.line,
-      html: md.renderer.render(s.tokens, md.options, env) || '<p class="md-empty">Документ пуст.</p>' }));
+      html: (env.htmlStack = [], md.renderer.render(s.tokens, md.options, env)) || '<p class="md-empty">Документ пуст.</p>' }));
   }
 
   const ignored = element => element.matches?.(".katex-mathml,annotation,.pnum,.hlLayer,.selLayer,.nb-label");

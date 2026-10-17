@@ -32,12 +32,12 @@ def test_example_notebook_converts_to_static_markdown():
     assert "```text nb-out\n45\n```" in text                    # execute_result
     assert "![вывод](data:image/png;base64,iVBOR" in text       # картинка из вывода
     assert "![вывод](data:image/svg+xml;base64," in text        # svg — тоже base64
-    assert "<table>" not in text and "   a  b" in text          # HTML не вставляется, есть text/plain
+    assert "```html nb-html\n<div>" in text and "   a  b" not in text   # HTML важнее text/plain
     assert "ZeroDivisionError: division by zero" in text and "\x1b" not in text
     assert "![logo](data:image/png;base64," in text             # attachment:
     assert "```text nb-raw\nraw-ячейка" in text
     assert "```python nb-in\n# не исполнялась" in text           # без execution_count
-    assert [s["cell"] for s in spans] == list(range(1, 11))
+    assert [s["cell"] for s in spans] == list(range(1, 12))
     lines = raw.split("\n")
     for span in spans:                                           # строка в .ipynb — начало source
         assert lines[span["file_line"] - 1].strip().startswith('"')
@@ -59,6 +59,21 @@ def test_selection_maps_to_cell_and_ipynb_line():
     assert both["cell"] == 1 and both["cellEnd"] == 3 and both["lineEnd"] > both["line"]
     # пустые строки между ячейками относятся к предыдущей ячейке
     assert source_for(spans, spans[0]["end"] + 1, spans[0]["end"] + 1)["cell"] == 1
+
+
+def test_html_widgets_and_service_outputs():
+    def one(*outputs):
+        return convert(json.dumps({"cells": [{"cell_type": "code", "source": "x", "outputs": list(outputs)}]}))[0]
+    styler = '<style type="text/css">#T_1_row0_col0 {background-color: #3787c0}</style><table id="T_1"><tr><td id="T_1_row0_col0">1</td></tr></table>'
+    assert "```html nb-html\n<style" in one({"output_type": "display_data", "data": {"text/html": styler}})
+    sk = '<div class="sk-text-repr-fallback"><pre>LinearRegression()</pre></div><style>…</style>'
+    text = one({"output_type": "execute_result", "data": {"text/html": sk, "text/plain": "LinearRegression()"}})
+    assert "nb-html" not in text and "```text nb-out\nLinearRegression()" in text   # схема sklearn → repr
+    widget = {"output_type": "display_data", "data": {"application/vnd.jupyter.widget-view+json": {"model_id": "m"},
+                                                      "text/plain": "  0%|          | 0/42"}}
+    assert "```text nb-widget\n0%|" in one(widget)
+    assert "не показывается" not in one({"output_type": "display_data", "data": {"application/vnd.colab-display-data+json": {}}})
+    assert "<!-- chitalka:cell -->" in one()                       # граница ячейки для незакрытого HTML
 
 
 def test_nbformat3_and_errors():

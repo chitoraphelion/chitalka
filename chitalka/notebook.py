@@ -3,8 +3,9 @@
 Ноутбук переводится в Markdown, и дальше работает обычный конвейер читалки
 (листы A4, KaTeX, поиск, замечания и заметки). Markdown-ячейки — как есть,
 код — блоком с подписью `In [n]`, сохранённые выводы — текстом, ошибками
-(без ANSI-цветов) и картинками. Для замечаний агенту строится карта:
-строка Markdown → номер ячейки и строка в самом .ipynb (для nvim).
+(без ANSI-цветов), картинками и HTML (таблицы pandas; очищается в браузере).
+Для замечаний агенту строится карта: строка Markdown → номер ячейки и строка
+в самом .ipynb (для nvim).
 """
 import base64
 import json
@@ -13,6 +14,9 @@ import re
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 IMAGE_MIME = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
 MAX_OUTPUT_LINES = 5000
+WIDGET_MIME = "application/vnd.jupyter.widget-view+json"
+CELL_END = "<!-- chitalka:cell -->"
+SKLEARN = "sk-text-repr-fallback"                # схема модели sklearn: без её CSS и JS — каша, берём repr
 
 
 def _text(value) -> str:
@@ -50,6 +54,8 @@ def _output(out: dict) -> list:
     data = out.get("data") or {}
     if kind == "pyout" or (not data and out.get("text")):          # nbformat 3
         data = {"text/plain": out.get("text"), **{f"image/{k}": out[k] for k in ("png", "jpeg") if k in out}}
+    if WIDGET_MIME in data:                      # ipywidgets/tqdm: в файле только начальный вид
+        return _fence(_text(data.get("text/plain")).strip() or "виджет", "text nb-widget")
     for mime in IMAGE_MIME:
         if mime in data:
             return [_image(mime, data[mime])]
@@ -58,8 +64,13 @@ def _output(out: dict) -> list:
     if "text/latex" in data:
         tex = _text(data["text/latex"]).strip()
         return [tex] if tex.startswith("$") or tex.startswith("\\[") else ["$$", tex, "$$"]
+    html = _text(data.get("text/html"))
+    if html.strip() and not (SKLEARN in html and "text/plain" in data):
+        return _fence(html, "html nb-html")      # очищается в браузере (markdown.js), скрипты не исполняются
     if "text/plain" in data:
         return _fence(ANSI.sub("", _text(data["text/plain"])), "text nb-out")
+    if data and all(m.startswith("application/vnd.") for m in data):
+        return []                                # служебные выводы Colab и т. п.
     if data:
         return [f"*Вывод типа {', '.join(sorted(data))} не показывается*"]
     return []
@@ -128,7 +139,7 @@ def convert(raw: str):
         spans.append({"cell": i + 1, "start": start, "end": len(out), "body": body_start,
                       "lines": max(1, len(source.split("\n"))),
                       "file_line": file_lines[i] if i < len(file_lines) else 1})
-        out += ["", ""]
+        out += ["", CELL_END, ""]                # граница ячейки: незакрытый HTML закрывается здесь
     return "\n".join(out), spans
 
 

@@ -572,6 +572,7 @@ async function openMarkdown(keep) {
 const A4 = { w: 794, h: 1123, pad: 72, font: 15 };
 const markdownFitScale = () => Math.max(.5 * PT, Math.min(2.4, (view.clientWidth - 64) / (A4.w / PT)));
 let relayoutTimer = 0;
+const openDetails = new Set();       // индексы раскрытых <details> (HTML ноутбуков)
 async function layoutMarkdown() {
   const k = scale / PT, limit = A4.h - 2 * A4.pad - 2;
   pagesEl.innerHTML = ""; pageState.clear();
@@ -584,14 +585,18 @@ async function layoutMarkdown() {
     if (t.content.firstElementChild) t.content.firstElementChild.dataset.sec = i;
     content.append(t.content);
   });
+  content.querySelectorAll("details").forEach((d, i) => { if (openDetails.has(i)) d.open = true; });
   sheet.append(content); pagesEl.append(sheet);
   if (document.fonts) await document.fonts.ready;
-  // 2) единицы раскладки: блоки верхнего уровня; длинные списки — по пунктам
+  // 2) единицы раскладки: блоки верхнего уровня; длинные списки — по пунктам, длинные
+  //    HTML-контейнеры ноутбука (div с оформлением курса) — по дочерним блокам
   const top0 = content.getBoundingClientRect().top, bottom = content.getBoundingClientRect().bottom, units = [];
   const blocks = [...content.children];
+  const parts = b => /^(UL|OL)$/.test(b.tagName) ? [...b.children].filter(li => li.tagName === "LI")
+    : /^(DIV|SECTION|ARTICLE|ASIDE|MAIN)$/.test(b.tagName) && !b.className && ![...b.childNodes].some(x => x.nodeType === 3 && x.data.trim()) ? [...b.children] : [];
   blocks.forEach((b, i) => {
     const y = b.getBoundingClientRect().top - top0, next = blocks[i + 1] ? blocks[i + 1].getBoundingClientRect().top - top0 : bottom - top0;
-    const items = /^(UL|OL)$/.test(b.tagName) ? [...b.children].filter(li => li.tagName === "LI") : [];
+    const items = parts(b);
     if (items.length > 1 && next - y > limit / 2) {
       items.forEach((li, j) => {
         const ly = li.getBoundingClientRect().top - top0, ln = items[j + 1] ? items[j + 1].getBoundingClientRect().top - top0 : next;
@@ -621,7 +626,7 @@ async function layoutMarkdown() {
     let list = null;
     for (const u of units) {
       if (!u.list) { box.append(u.el); list = null; continue; }
-      if (!list || list.source !== u.list) {             // продолжение списка на новом листе
+      if (!list || list.source !== u.list) {             // продолжение списка (или HTML-блока) на новом листе
         list = { source: u.list, el: u.list.cloneNode(false) };
         if (u.list.tagName === "OL") list.el.start = (u.list.start || 1) + u.index;
         box.append(list.el);
@@ -645,6 +650,13 @@ async function layoutMarkdown() {
   $("#zval").textContent = Math.round(scale / PT * 100) + "%";
   $("#zfit").classList.toggle("on", fit);
 }
+// <details> из HTML ноутбука: раскрытие меняет высоту — разложить заново, запомнив, что открыто
+pagesEl.addEventListener("toggle", e => {
+  if (documentMode !== "markdown" || e.target.tagName !== "DETAILS") return;
+  const i = [...pagesEl.querySelectorAll("details")].indexOf(e.target);
+  if (e.target.open) openDetails.add(i); else openDetails.delete(i);
+  scheduleRelayout();
+}, true);
 // картинка догрузилась и изменила высоту — разложить заново, сохранив место чтения
 function scheduleRelayout() {
   clearTimeout(relayoutTimer);

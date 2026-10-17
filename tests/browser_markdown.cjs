@@ -133,9 +133,19 @@ const nbView=await nb.evaluate(()=>({imgs:[...document.querySelectorAll('.md-con
  inp:document.querySelectorAll('.nb-in').length,out:document.querySelectorAll('.nb-out').length,err:document.querySelectorAll('.nb-err').length,kind:document.querySelector('#build')?.textContent||'',text:document.querySelector('#pages').innerText}));
 assert.deepEqual(nbView.imgs.slice(0,3).sort((a,b)=>a-b),[40,120,160],JSON.stringify(nbView.imgs));
 assert.ok(nbView.labels.includes('In [1]')&&nbView.labels.includes('In [5]'),JSON.stringify(nbView.labels));
-assert.equal(nbView.inp,6);assert.ok(nbView.out>=3&&nbView.err>=2,JSON.stringify(nbView));
+assert.equal(nbView.inp,6);assert.ok(nbView.out>=2&&nbView.err>=2,JSON.stringify(nbView));
 assert.ok(nbView.text.includes('ZeroDivisionError: division by zero')&&!nbView.text.includes('\u001b'));
 await nb.screenshot({path:path.join(os.tmpdir(),'chitalka-notebook.png'),fullPage:false});
+// HTML in notebooks: pandas tables and course markup render; scripts never run; <details> survives relayout.
+const nbHtml=await nb.evaluate(()=>({table:document.querySelectorAll('.nb-html table td').length,box:!!document.querySelector('.md-content div[style*="border-left"]'),
+ green:!!document.querySelector('.md-content span[style="color:green"]'),scripts:document.querySelectorAll('.md-content script,.md-content style,.md-content [class="dataframe"]').length,
+ title:document.title,details:document.querySelectorAll('.md-content details').length,toc:outline.map(o=>o.title)}));
+assert.equal(nbHtml.table,4);assert.ok(nbHtml.box&&nbHtml.green,JSON.stringify(nbHtml));assert.equal(nbHtml.scripts,0);assert.notEqual(nbHtml.title,'исполнено');
+assert.equal(nbHtml.details,1);assert.ok(nbHtml.toc.includes('HTML в ячейках'));
+assert.ok(!(await nb.locator('#pages').innerText()).includes('<div'),'HTML is not shown as text');
+await nb.evaluate(()=>document.querySelector('.md-content details summary').scrollIntoView());await nb.locator('.md-content details summary').click();
+await nb.waitForTimeout(400);await nb.waitForFunction(()=>document.querySelector('.md-content details').open&&document.querySelector('.md-content details .katex-display'));
+
 const nbPending=await nb.evaluate(()=>{const code=[...document.querySelectorAll('.nb-in code')].find(c=>c.textContent.includes('for k in range')),r=document.createRange();r.selectNodeContents(code);const s=window.getSelection();s.removeAllRanges();s.addRange(r);onSelection();return {...window.eval('pending')};});
 assert.ok(!nbPending.quote.includes('In ['),'label is not part of the quote');
 await nb.waitForSelector('#selbar.show');await nb.keyboard.press('c');await nb.locator('.composer textarea.main').fill('Шаг поменять');await nb.keyboard.press('Control+Enter');

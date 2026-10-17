@@ -42,3 +42,25 @@ assert.ok(!result.includes('etc%2Fx.md') && !result.includes('/assets/etc/p.png'
 assert.equal((result.match(/md-outside/g) || []).length, 2);
 assert.ok(result.includes('href="/?document=paper.pdf"'));
 console.log('Markdown renderer: formatting, math, source maps, links and untrusted input passed');
+// Notebooks (.ipynb): HTML as in Jupyter, but rebuilt from a whitelist; .md keeps HTML as text.
+{
+  const nb = source => render(source, 'hw/nb.ipynb', libraries).map(s => s.html).join('');
+  let out = nb('<div onclick="alert(1)" id="view" class="page" style="color:red;position:fixed;background:url(//x)"><script>alert(1)</script>' +
+    '<img src=x onerror=alert(1)><img src="javascript:alert(1)"><a href="java&#115;cript:alert(1)">x</a><a href="https://e.com/">ok</a><iframe src="//e"></iframe></div>');
+  for (const bad of ['onclick', 'onerror', 'id="view"', 'class="page"', 'position', 'url(', '<script', 'alert(1)<', 'javascript', '<iframe']) assert.ok(!out.includes(bad), bad + ' in ' + out);
+  assert.ok(out.includes('style="color:red"') && out.includes('href="https://e.com/" target="_blank"'));
+  out = nb('<details>\n<summary>Подсказка $x^2$</summary>\n\nТекст $y$.\n\n</details>');
+  assert.ok(/<details[^>]*>\s*<summary[^>]*>Подсказка <span class="md-math"[\s\S]*<p[^>]*>Текст <span class="md-math"[\s\S]*<\/p>\s*<\/details>/.test(out), out);
+  out = nb('<div style="color:red">\n\nвнутри\n\n<!-- chitalka:cell -->\n\nследующая');
+  assert.ok(/<\/div><p[^>]*>следующая/.test(out), 'unclosed HTML is closed at the cell boundary');
+  out = nb('<style>#T_a_row0_col0 { background-color: #3787c0 }</style><table id="T_a"><tr><td id="T_a_row0_col0">1</td></tr></table>');
+  assert.ok(/<td style="background-color:#3787c0"[^>]*>1<\/td>/.test(out) && !out.includes('<style'), out);
+  assert.equal(render('<h2>Задание <b>1</b></h2>\n\nтекст', 'nb.ipynb', libraries)[0].title, 'Задание 1');
+  assert.ok(!nb('$a = 0 $, то $b$').includes('katex-error'), 'Jupyter-style $…$ with inner trailing space');
+  assert.ok(html('<b>x</b>').includes('&lt;b&gt;'), '.md keeps HTML as text');
+  assert.ok(!html('Cost $5 and $10.').includes('md-math'));
+}
+console.log('Notebook HTML: whitelist, cell boundaries, Styler, headings passed');
+assert.ok(!render('$$\n\\operatorname{A}\n=\n\\frac{1}{2}\n$$', 'x.md', libraries)[0].html.includes('<h1'), 'a "=" line inside $$ is not a setext heading');
+assert.equal(render('$$\n\\operatorname{A}\n=\n1\n$$\n\n# H', 'x.md', libraries).length, 2);
+console.log('Display math before setext headings passed');
